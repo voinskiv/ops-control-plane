@@ -22,10 +22,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-001
       Status: merged 2026-07-06 (PR #2), Done-when green in CI.
 
-- [ ] SLICE-003: Action kernel core — registry, dispatch, idempotency, audit-in-transaction
+- [x] SLICE-003: Action kernel core — registry, dispatch, idempotency, audit-in-transaction
       Architecture ref: §5, §6, §7 (app_kernel role + GUC), §21.3
       Done when: POST /api/actions dispatches through authorize → entitlement (noop-unlimited) → threshold → validate → transaction(execute + audit) → persist result (§21.3); unknown action → typed rejection and every registered action has a Zod schema (§20.1); replay on (workspace_id, idempotency_key) returns the stored envelope byte-identical with no re-execution, same key + different input_hash → typed rejection (§20.2, F24, F30); audit-per-executed-action property test iterates the registry (§20.3); kernel runs as app_kernel with per-transaction app.workspace_id GUC (F13)
       Depends on: SLICE-002
+      Status: merged 2026-07-06 (PR #3), Done-when green in CI.
 
 - [ ] SLICE-004: Tenancy isolation test suite (RLS backstop proof)
       Architecture ref: §7, §20.4, F13
