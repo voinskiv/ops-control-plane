@@ -14,7 +14,9 @@
     "next": "^16.2.10",
     "next-intl": "^4.13.1",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "uuid": "^13.0.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
@@ -25,6 +27,7 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.10",
     "pg": "^8.22.0",
+    "supabase": "^2.109.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
@@ -36,6 +39,7 @@
     "@embedded-postgres/linux-ia32@17.10.0-beta.17": true,
     "@embedded-postgres/linux-ppc64@17.10.0-beta.17": true,
     "@embedded-postgres/linux-x64@17.10.0-beta.17": true,
-    "@embedded-postgres/windows-x64@17.10.0-beta.17": true
+    "@embedded-postgres/windows-x64@17.10.0-beta.17": true,
+    "supabase@2.109.0": true
   }
 }

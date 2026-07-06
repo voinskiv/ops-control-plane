@@ -16,10 +16,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: none
       Status: merged 2026-07-05 (PR #1), Done-when green in CI.
 
-- [ ] SLICE-002: Full v1 schema migrations + RLS policies + immutability triggers
+- [x] SLICE-002: Full v1 schema migrations + RLS policies + immutability triggers
       Architecture ref: §3, §6 (enforcement), §7, §19 Phase 0 ("full v1 schema ships in Phase 0")
       Done when: migrations apply on an empty local Supabase (§20.12 partial); every tenant table has workspace_id NOT NULL, RLS enabled, (workspace_id, …) indexes (§21.5); UUIDv7 PKs except plans text code PK (§21.4, F9); SQL tests prove audit_events rejects UPDATE/DELETE and execution_records/proofs BEFORE triggers reject non-kernel or fact-column UPDATE (§20.6, F4, F30)
       Depends on: SLICE-001
+      Status: merged 2026-07-06 (PR #2), Done-when green in CI.
 
 - [ ] SLICE-003: Action kernel core — registry, dispatch, idempotency, audit-in-transaction
       Architecture ref: §5, §6, §7 (app_kernel role + GUC), §21.3
