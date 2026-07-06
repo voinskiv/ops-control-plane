@@ -16,6 +16,9 @@ import { connect, type DbClient } from "@core/db/client";
 
 let db: DbClient;
 
+// Unique per run so the suite can rerun against a persistent database
+// (TEST_DATABASE_URL), not just the throwaway embedded one.
+const runTag = `test-immutability-${randomUUID().slice(0, 8)}`;
 const workspaceId = randomUUID();
 const recordId = randomUUID();
 const proofId = randomUUID();
@@ -41,13 +44,13 @@ beforeAll(async () => {
   const windowId = randomUUID();
   const personId = randomUUID();
 
-  await db.query(
-    "INSERT INTO plans (code, name, limits, price) VALUES ('test-immutability', 'Test', '{}', '{}')",
-  );
+  await db.query("INSERT INTO plans (code, name, limits, price) VALUES ($1, 'Test', '{}', '{}')", [
+    runTag,
+  ]);
   await db.query(
     `INSERT INTO workspaces (id, name, slug, plan_code, settings, status)
-     VALUES ($1, 'Test GmbH', 'test-immutability', 'test-immutability', '{}', 'active')`,
-    [workspaceId],
+     VALUES ($1, 'Test GmbH', $2, $2, '{}', 'active')`,
+    [workspaceId, runTag],
   );
   await db.query(
     `INSERT INTO clients (id, workspace_id, name, contact, status)

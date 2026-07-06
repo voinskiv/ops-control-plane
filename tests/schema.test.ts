@@ -1,6 +1,8 @@
 // SLICE-002 schema conformance (§3 conventions, §21.4, §21.5, §21.7, DEC-005).
 // Runs against the migrated database provided by tests/helpers/global-setup.ts.
 import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 
@@ -55,15 +57,15 @@ describe("§3 schema conventions", () => {
     expect(res.rows.map((r) => r.tablename)).toEqual(expected);
   });
 
-  it("all three migrations are recorded as applied on the empty database", async () => {
+  it("every migration in db/migrations is recorded as applied", async () => {
+    const files = (await readdir(join(process.cwd(), "db", "migrations")))
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
     const res = await db.query<{ version: string }>(
       "SELECT version FROM schema_migrations ORDER BY version",
     );
-    expect(res.rows.map((r) => r.version)).toEqual([
-      "0001_schema.sql",
-      "0002_rls.sql",
-      "0003_immutability.sql",
-    ]);
+    expect(files.length).toBeGreaterThanOrEqual(3);
+    expect(res.rows.map((r) => r.version)).toEqual(files);
   });
 
   it("every tenant table has workspace_id uuid NOT NULL (§21.5)", async () => {
@@ -154,7 +156,9 @@ describe("§3 schema conventions", () => {
 });
 
 describe("idempotency scoping (§5, §21.7, DEC-005)", () => {
-  const planCode = "test-schema";
+  // Unique per run so the suite can rerun against a persistent database
+  // (TEST_DATABASE_URL), not just the throwaway embedded one.
+  const planCode = `test-schema-${randomUUID().slice(0, 8)}`;
   const workspaceA = randomUUID();
   const workspaceB = randomUUID();
 
@@ -163,8 +167,8 @@ describe("idempotency scoping (§5, §21.7, DEC-005)", () => {
       planCode,
     ]);
     for (const [id, slug] of [
-      [workspaceA, "test-schema-a"],
-      [workspaceB, "test-schema-b"],
+      [workspaceA, `${planCode}-a`],
+      [workspaceB, `${planCode}-b`],
     ]) {
       await db.query(
         `INSERT INTO workspaces (id, name, slug, plan_code, settings, status)

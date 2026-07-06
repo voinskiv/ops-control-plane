@@ -1,5 +1,17 @@
 {
   "app": {
     "title": "Ops Control Plane"
+  },
+  "errors": {
+    "action": {
+      "unknown_action": "Unbekannte Aktion.",
+      "unauthenticated": "Nicht angemeldet.",
+      "unauthorized": "Keine Berechtigung für diese Aktion.",
+      "validation_failed": "Ungültige Eingabe.",
+      "idempotency_conflict": "Dieser Idempotenzschlüssel wurde bereits mit anderer Eingabe verwendet.",
+      "entitlement_denied": "Im aktuellen Plan nicht enthalten.",
+      "proposal_gating_unavailable": "Agenten-Vorschläge sind noch nicht verfügbar.",
+      "internal_error": "Interner Fehler."
+    }
   }
 }

@@ -74,6 +74,15 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const db = await connect(databaseUrl);
   try {
     await applyMigrations(db, join(process.cwd(), "db", "migrations"));
+    // The suites assume the harness user can SET ROLE app_kernel. A true
+    // superuser (embedded server) can already; on a Supabase stack the
+    // `postgres` user is not superuser and PG16+ role semantics require an
+    // explicit membership grant with the SET option (the migration's CREATE
+    // ROLE leaves the creator with ADMIN, which suffices to self-grant).
+    // INHERIT FALSE keeps the membership step-down only: the admin may become
+    // app_kernel, never passively hold its grants.
+    const who = await db.query<{ user: string }>("SELECT current_user AS user");
+    await db.query(`GRANT app_kernel TO "${who.rows[0]!.user}" WITH SET TRUE, INHERIT FALSE`);
   } finally {
     await db.end();
   }

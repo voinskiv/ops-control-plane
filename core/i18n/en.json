@@ -1,5 +1,17 @@
 {
   "app": {
     "title": "Ops Control Plane"
+  },
+  "errors": {
+    "action": {
+      "unknown_action": "Unknown action.",
+      "unauthenticated": "Not signed in.",
+      "unauthorized": "You are not authorized to run this action.",
+      "validation_failed": "Invalid input.",
+      "idempotency_conflict": "This idempotency key was already used with different input.",
+      "entitlement_denied": "Not included in the current plan.",
+      "proposal_gating_unavailable": "Agent proposals are not available yet.",
+      "internal_error": "Internal error."
+    }
   }
 }

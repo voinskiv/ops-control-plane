@@ -52,7 +52,7 @@ scope for every session until resolved.
 - Architecture impact: none — kernel-internal; §5 catalog and non-platform idempotency scoping unchanged
 
 ### DEC-006 — 2026-07-05 — Where do §5 audit extras live in audit_events?
-- Status: OPEN
+- Status: RESOLVED
 - Raised by: SLICE-002 (schema authoring). Blocks the audit-extras write path
   (SLICE-003's kernel audit writer and every action slice with a non-empty
   Audit-extras column, starting with SLICE-005's plan snapshot) — not
@@ -79,11 +79,23 @@ scope for every session until resolved.
   Why this needs human sign-off: AUDIT model and logged fields (AGENTS.md
   AMBIGUITY list); if the default were wrong the audit log would either lose
   catalog-mandated evidence or corrupt diff semantics on a billing-grade trail.
-- Resolution:
-- Architecture impact: pending (likely amends the §3 audit_events row)
+- Resolution: Option A — add `extras jsonb` (nullable) to audit_events;
+  before/after stay pure entity-state diffs and the §5 Audit-extras payloads
+  live in the dedicated column, covered automatically by the append-only
+  privilege revocation (§6). Rationale as approved: B makes `after` ≠
+  post-mutation state, so every consumer (F31 attribution, the Phase 5
+  promotion-stats read, reconstruction) inherits a strip-the-reserved-key
+  parsing hazard; C stores tamper-relevant evidence (GDPR basis note, reasons,
+  reliability snapshots) in a table that is updatable by design (F30) and
+  loses per-event granularity (one invocation can emit several audit events,
+  F2). Cost if wrong: a redundant nullable column. Migration lands in
+  SLICE-003. Approved by: Vitali Voinski (operator), 2026-07-06; proposal
+  authored and transcribed by the implementing agent.
+- Architecture impact: amends the §3 audit_events row (adds `extras jsonb?`);
+  amendment applied to ARCHITECTURE.md by the operator
 
 ### DEC-007 — 2026-07-05 — How is the platform actor represented in audit_events?
-- Status: OPEN
+- Status: RESOLVED
 - Raised by: SLICE-002 (schema authoring). Blocks SLICE-005 (workspace.create
   writes an audit event as the platform actor) and later plan.set /
   entitlement.override — not SLICE-002 itself.
@@ -106,8 +118,29 @@ scope for every session until resolved.
   Why this needs human sign-off: AUDIT model / stored data formats (AGENTS.md
   AMBIGUITY list); wrong attribution of platform actions on an append-only
   trail cannot be corrected retroactively.
-- Resolution:
-- Architecture impact: pending (likely amends the §3 audit_events actor_type enum)
+- Resolution: Option A — `ALTER TYPE actor_type ADD VALUE 'platform'`;
+  audit_events attributes platform actions faithfully, matching the
+  actor_type='platform' rows action_invocations already carries (DEC-005).
+  The invocation_actor_type enum stays a separate type even though the value
+  sets now converge (independent evolution, no column-type migration churn).
+  Locked-ruling check (verified before transcription): §3 places no [FIXED]
+  marker on the audit_events row or its enum — §3's only [FIXED] covers the
+  commitment-type column/JSONB split; §6's [FIXED] ruling (append-only
+  audit_events written in the same transaction) is not reopened by an enum
+  value; §19's "later phases add code, not tables [FIXED]" concerns new
+  tables and this lands within Phase 0. This is therefore an additive
+  amendment to the §3 table row, not a change to a locked ruling — unlike
+  DEC-005's rejected Option B, which would have widened §5's [FIXED]
+  idempotency contract. Rationale as approved: §7 already names platform "a
+  distinct `platform` actor using explicit audited actions"; auditing it as
+  `system` overloads a value §2 defines as cron/detectors, makes the most
+  security-relevant events the only ones needing jsonb-marker parsing to
+  attribute, couples DEC-007 to DEC-006's column, and creates a permanent
+  platform↔system vocabulary mismatch across the audit_events.invocation_id
+  join. Migration lands in SLICE-003. Approved by: Vitali Voinski (operator),
+  2026-07-06; proposal authored and transcribed by the implementing agent.
+- Architecture impact: amends the §3 audit_events row (actor_type enum gains
+  'platform'); amendment applied to ARCHITECTURE.md by the operator
 
 ---
 
@@ -123,3 +156,12 @@ scope for every session until resolved.
 - 2026-07-05 SLICE-002: unique indexes beyond §3's explicit ones, each a lookup-path necessity: workspaces.slug, auth_devices.token_hash and report_shares.token_hash (hashed-token resolution precedes workspace context, §12/§16), partial unique persons(workspace_id, auth_user_id) (F11 "unique per workspace").
 - 2026-07-05 SLICE-002: RLS = uniform SELECT/INSERT/UPDATE policies TO app_kernel (created NOLOGIN) comparing workspace_id to the app.workspace_id GUC, failing closed when unset; workspaces compares its own id; plans is read-only-global; no DELETE grant or policy on any table (nothing hard-deletes, §3); audit_events gets SELECT/INSERT only.
 - 2026-07-05 SLICE-002: migrations = sequential SQL in db/migrations applied by core/db/migrate.ts (one transaction per file), tracked in public.schema_migrations (RLS-enabled, no policies, invisible to app_kernel); the sandbox has no Docker daemon for `supabase start`, so SQL tests provision embedded PostgreSQL 17 (real Postgres, devDependencies embedded-postgres + pg + @types/pg), with TEST_DATABASE_URL as the local-Supabase override.
+- 2026-07-06 SLICE-003 (operator-confirmed): the DEC-005 platform replay lookup runs through a SECURITY DEFINER function `app_platform_invocation_lookup(key)` (STABLE, empty search_path, schema-qualified, EXECUTE granted to app_kernel only) — one auditable query shape (exact key + actor_type='platform') instead of a GUC-gated policy carve-out whose ambient session state would weaken the tenant SELECT policy for every query on the table; strict RLS policies stay untouched.
+- 2026-07-06 SLICE-003 (operator-confirmed): first `plans` row ('pilot', empty limits/price, inert while the Phase 0 entitlement resolver is noop-unlimited) is inserted by migration — plans is global reference config with a stable text code PK (F9), outside DEC-004's kernel-replay rule, which exists for tenant fixtures (audit trail + state machines); pulling plan.set forward from Phase 5 for one row would drag entitlement semantics into Phase 0.
+- 2026-07-06 SLICE-003: rejected invocations persist as status='rejected' rows with the stored envelope so rejections replay byte-identically; two deterministic exceptions return unpersisted envelopes — input-hash-mismatch (F24: the key belongs to the original row) and platform pre-execution rejections (no tenant root exists for the NOT NULL workspace_id).
+- 2026-07-06 SLICE-003: byte-identical replay (F24) = the kernel returns the RETURNING value of the response-envelope UPDATE, so the first response and every replay serialize the identical stored jsonb; input_hash = sha256 over canonical JSON (sorted keys), making replay matching key-order independent.
+- 2026-07-06 SLICE-003: agent invocations of proposal_gated actions are typed rejections (mutation-free) until SLICE-034 delivers AgentProposal conversion (F2); threshold classes otherwise pass humans/system/platform through to the role matrix.
+- 2026-07-06 SLICE-003: kernel connections assume app_kernel via the connection startup parameter (options="-c role=app_kernel"); deployments grant the login role membership in app_kernel WITH SET (PG16+ semantics), which the test harness self-grants after migrating.
+- 2026-07-06 SLICE-003: new dependencies — zod@4 (runtime, §5 validation), uuid@13 (runtime, app-generated UUIDv7 §3), supabase@2 (dev, local stack config under db/supabase via --workdir db); drizzle deferred until a slice needs typed domain queries — core/db stays the only db import site (§20.5).
+- 2026-07-06 SLICE-003 (operator-confirmed, structural): data-access split for all future slices — the kernel's bookkeeping (invocation insert/update/select, audit insert, GUC set_config, the DEC-005 lookup call: six fixed statements inside the soon-frozen pipeline modules) stays raw SQL permanently; domain CRUD adopts Drizzle starting SLICE-005, which adds a core/db/schema.ts mirror of all 22 §3 tables plus a **required CI gate** asserting Drizzle-schema ↔ information_schema parity, so drift between db/migrations and the mirror fails the build. §19's map comment ("drizzle schema, client, GUC helper") names the library in the one place the architecture mentions an ORM; this note fixes how it applies. Confirmed by Vitali Voinski (operator), 2026-07-06.
+- 2026-07-06 SLICE-003: HTTP mapping for the §5 envelope — ok 200, error 500, rejected 401 (unauthenticated) / 403 (unauthorized) / 409 (idempotency_conflict) / 400 otherwise; POST /api/actions resolves no actor until SLICE-008/009 attach session/device auth, so it returns the typed unauthenticated rejection without reaching the kernel.
