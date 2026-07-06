@@ -31,6 +31,7 @@ const siteId = randomUUID();
 const windowId = randomUUID();
 const runTag = `test-kernel-${randomUUID().slice(0, 8)}`;
 
+const platform = { type: "platform" } as const satisfies Actor;
 const manager = { type: "person", id: randomUUID(), roleClass: "manager", workspaceId } as const satisfies Actor;
 const supervisor = { type: "person", id: randomUUID(), roleClass: "supervisor", workspaceId } as const satisfies Actor;
 const owner = { type: "person", id: randomUUID(), roleClass: "owner", workspaceId } as const satisfies Actor;
@@ -54,15 +55,15 @@ async function adminInsertVerifiedRecord(): Promise<string> {
 async function invocationRow(
   key: string,
 ): Promise<{ id: string; status: string; result: ResponseEnvelope | null; input_hash: string } | null> {
+  // Keys are unique per test, so the admin lookup needs no workspace scope —
+  // platform bootstrap rows carry the created workspace's id (DEC-005), not
+  // this file's fixture workspace.
   const res = await admin.query<{
     id: string;
     status: string;
     result: ResponseEnvelope | null;
     input_hash: string;
-  }>("SELECT id, status, result, input_hash FROM action_invocations WHERE workspace_id = $1 AND idempotency_key = $2", [
-    workspaceId,
-    key,
-  ]);
+  }>("SELECT id, status, result, input_hash FROM action_invocations WHERE idempotency_key = $1", [key]);
   return res.rows[0] ?? null;
 }
 
@@ -202,6 +203,31 @@ registry.register({
       [input.id, ctx.workspaceId],
     );
     return { result: null, audit: [] };
+  },
+});
+
+registry.register({
+  name: "test.workspace_bootstrap",
+  // Shaped like workspace.create (§5 catalog: platform, human_only): the
+  // kernel's DEC-005 platform flow is under test; the real action ships in
+  // SLICE-005.
+  actors: { platform: true },
+  threshold: "human_only",
+  input: z.object({ id: z.uuid(), slug: z.string().min(1) }),
+  async execute(ctx, input) {
+    await ctx.setWorkspaceId(input.id);
+    // Widen the race window so two concurrent identical calls overlap
+    // reliably in the concurrency test below.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await ctx.tx.query(
+      `INSERT INTO workspaces (id, name, slug, plan_code, settings, status)
+       VALUES ($1, 'Bootstrap', $2, 'pilot', '{}', 'active')`,
+      [input.id, input.slug],
+    );
+    return {
+      result: { workspaceId: input.id },
+      audit: [{ entityType: "workspaces", entityId: input.id, after: { slug: input.slug }, extras: { plan: "pilot" } }],
+    };
   },
 });
 
@@ -369,6 +395,64 @@ describe("idempotency (§20.2, F24, F30)", () => {
     expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
   });
 
+  it("replay returns the stored envelope without re-running gates (F24)", async () => {
+    // §5 [FIXED] matches replays on (workspace_id, idempotency_key) only —
+    // this is why the replay lookup precedes authorize in the pipeline: a
+    // gate outcome that changed since the original call must not alter a
+    // byte-identical replay.
+    const key = freshKey();
+    const id = randomUUID();
+    const first = await kernel.dispatch(manager, {
+      name: "test.client_create",
+      input: { id, name: "Gated Replay" },
+      idempotencyKey: key,
+    });
+    expect(first.status).toBe("ok");
+    // A fresh supervisor call would fail authorize (min role: manager); the
+    // replay still returns the stored envelope with no re-evaluation.
+    const replay = await kernel.dispatch(supervisor, {
+      name: "test.client_create",
+      input: { id, name: "Gated Replay" },
+      idempotencyKey: key,
+    });
+    expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
+    expect(await clientCount(id)).toBe(1);
+  });
+
+  it("platform bootstrap replays through the DEC-005 lookup: one workspace, stored envelope", async () => {
+    const key = freshKey();
+    const input = { id: randomUUID(), slug: `${runTag}-replay` };
+    const first = await kernel.dispatch(platform, { name: "test.workspace_bootstrap", input, idempotencyKey: key });
+    expect(first.status).toBe("ok");
+    const replay = await kernel.dispatch(platform, { name: "test.workspace_bootstrap", input, idempotencyKey: key });
+    expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
+    const ws = await admin.query<{ n: string }>("SELECT count(*) AS n FROM workspaces WHERE id = $1", [input.id]);
+    expect(Number(ws.rows[0]?.n)).toBe(1);
+  });
+
+  it("two concurrent identical platform bootstraps commit once and answer identically (§20.2, DEC-005)", async () => {
+    // Claim-before-execute is structurally impossible for the tenant-root
+    // bootstrap (the pending row FK-references the workspace the action
+    // creates), so both racers may start executing; the unique indexes admit
+    // one committer and the loser must resolve to the winner's stored
+    // envelope via the retry → replay path.
+    const key = freshKey();
+    const input = { id: randomUUID(), slug: `${runTag}-race` };
+    const [a, b] = await Promise.all([
+      kernel.dispatch(platform, { name: "test.workspace_bootstrap", input, idempotencyKey: key }),
+      kernel.dispatch(platform, { name: "test.workspace_bootstrap", input, idempotencyKey: key }),
+    ]);
+    expect(a.status).toBe("ok");
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    const ws = await admin.query<{ n: string }>("SELECT count(*) AS n FROM workspaces WHERE id = $1", [input.id]);
+    expect(Number(ws.rows[0]?.n)).toBe(1);
+    const inv = await admin.query<{ n: string }>(
+      "SELECT count(*) AS n FROM action_invocations WHERE idempotency_key = $1",
+      [key],
+    );
+    expect(Number(inv.rows[0]?.n)).toBe(1);
+  });
+
   it("input hashing is key-order independent", async () => {
     const key = freshKey();
     const id = randomUUID();
@@ -455,6 +539,11 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     "test.client_create": { actor: manager, input: () => ({ id: randomUUID(), name: "Property" }), expected: "ok" },
     "test.proposal_gated_create": { actor: manager, input: () => ({ id: randomUUID() }), expected: "ok" },
     "test.env_probe": { actor: supervisor, input: () => ({}), expected: "ok" },
+    "test.workspace_bootstrap": {
+      actor: platform,
+      input: () => ({ id: randomUUID(), slug: `${runTag}-prop-${randomUUID().slice(0, 8)}` }),
+      expected: "ok",
+    },
     "test.owner_only": { actor: owner, input: () => ({}), expected: "ok" },
     "test.record_void": {
       actor: manager,

@@ -25,12 +25,7 @@ import {
 } from "./types";
 
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: string }).code === "23505" &&
-    ((error as { constraint?: string }).constraint ?? "").startsWith("action_invocations")
-  );
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
 }
 
 async function setGuc(client: Queryable, name: string, value: string): Promise<void> {
@@ -172,8 +167,16 @@ export class Kernel {
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (isUniqueViolation(error) && attempt === 0) {
-        // Two concurrent invocations raced on the same key; the committed row
-        // now answers as a replay.
+        // Any unique violation may be a same-key race whose winner has now
+        // committed — including a *domain* unique (e.g. the workspace PK/slug
+        // during platform bootstrap, where the loser collides on the winner's
+        // rows before reaching the invocation index. Postgres makes the loser
+        // wait on the winner's in-flight insert, so by the time the 23505
+        // surfaces the winner has committed). The retry's replay lookup
+        // disambiguates: same key + same hash → the winner's stored envelope;
+        // same key + different hash → typed idempotency_conflict; fresh key →
+        // a genuine domain conflict that re-executes once and lands in the
+        // error path below.
         return this.run(client, actor, invocation, 1);
       }
       return this.persistError(client, actor, workspaceId, invocation, hash);
