@@ -16,7 +16,7 @@ import { z } from "zod";
 import { noopUnlimitedResolver } from "@core/actions/entitlement";
 import { handleActionsPost } from "@core/actions/http";
 import { Kernel } from "@core/actions/kernel";
-import { ActionRegistry } from "@core/actions/registry";
+import { ActionRegistry, registry as applicationRegistry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
 import { connect, type DbClient } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
@@ -204,6 +204,15 @@ registry.register({
     return { result: null, audit: [] };
   },
 });
+
+// §20.3 iterates *the* registry, not just test scaffolding: fold the
+// application registry into the dispatched set so every production action
+// registered from SLICE-005 onward needs a fixture below or this suite
+// fails. Empty today — importing the future action catalog here is what
+// makes it binding.
+for (const definition of applicationRegistry.list()) {
+  registry.register(definition);
+}
 
 beforeAll(async () => {
   const url = inject("databaseUrl");

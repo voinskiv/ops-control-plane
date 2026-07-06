@@ -143,7 +143,13 @@ export class Kernel {
 
       // F30: pending row and response update live in this same transaction.
       // For platform bootstrap the insert waits until the executed action has
-      // announced the app-generated workspace id.
+      // announced the app-generated workspace id — claim-before-execute is
+      // structurally impossible there (workspace_id is NOT NULL with an FK to
+      // the workspace the action itself creates; DEC-005 Option A). Two
+      // concurrent same-key platform calls may therefore both start
+      // executing, but each one's effects commit atomically with its pending
+      // row, the DEC-005 partial unique index admits one committer, and the
+      // loser rolls back completely and retries into the replay path.
       await insertPendingRow();
       const outcome = await definition.execute(ctx, parsed.data);
       if (workspaceId === null) {
