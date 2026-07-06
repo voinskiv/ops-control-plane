@@ -10,10 +10,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
 ## Phase 0: Foundation
 
-- [ ] SLICE-001: Repo scaffold, CI gates, i18n catalog skeleton
+- [x] SLICE-001: Repo scaffold, CI gates, i18n catalog skeleton
       Architecture ref: §19 (module map, Phase 0), §15, §20.5, §20.7
       Done when: repo tree matches the §19 map (§21.1); CI runs typecheck, lint, tests; lint enforces no-hardcoded-strings (§20.7) and no db import outside core/db, no core/db import inside app/ (§20.5); de.json + en.json catalogs exist with the de completeness check wired
       Depends on: none
+      Status: merged 2026-07-05 (PR #1), Done-when green in CI.
 
 - [ ] SLICE-002: Full v1 schema migrations + RLS policies + immutability triggers
       Architecture ref: §3, §6 (enforcement), §7, §19 Phase 0 ("full v1 schema ships in Phase 0")

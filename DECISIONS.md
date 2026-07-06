@@ -51,6 +51,64 @@ scope for every session until resolved.
 - Resolution: Option A — "kernel-internal replay lookup for platform-actor invocations, scoped by (idempotency_key, actor_type=platform), with input_hash comparison and a partial unique index; §5's (workspace_id, idempotency_key) scoping continues to govern every non-platform action unchanged." Approver's rationale: A is purely internal to the kernel — no input schema changes, nothing any caller can observe differently; B would widen the §5 catalog input while §5 idempotency is marked [FIXED], so B reopens a locked ruling rather than implementing one; C creates a permanent synthetic-tenant special case in RLS and reporting to solve a one-time bootstrap problem — worst cost-to-benefit of the three. Approver's implementation note: the migration adding the partial unique index lands in the PR that creates action_invocations (SLICE-002), not the kernel PR. Approved by: Vitali Voinski (operator), 2026-07-05; transcribed by the implementing agent.
 - Architecture impact: none — kernel-internal; §5 catalog and non-platform idempotency scoping unchanged
 
+### DEC-006 — 2026-07-05 — Where do §5 audit extras live in audit_events?
+- Status: OPEN
+- Raised by: SLICE-002 (schema authoring). Blocks the audit-extras write path
+  (SLICE-003's kernel audit writer and every action slice with a non-empty
+  Audit-extras column, starting with SLICE-005's plan snapshot) — not
+  SLICE-002 itself, whose schema is valid under every option below.
+- Question: §5 fixes the audit payload ("Audit payload always includes
+  invocation_id, actor, entity refs, and before/after diff; the Audit-extras
+  column lists additions") and nearly every catalog row names extras (reason,
+  plan snapshot, code hash, fulfillment calculation, model + token counts, …),
+  but §3's audit_events row defines no storage for them (invocation_id?,
+  actor_type, actor_id?, action, entity_type, entity_id, before?, after?, at).
+  Where do audit extras live?
+  Options considered: (A) add `extras jsonb?` to audit_events — dedicated
+  storage keeping before/after as pure state diffs; one additive migration; a
+  reviewer picks this if §6's reconstruction-grade history should keep diffs
+  and extras separable. (B) fold extras into `after` under a reserved key — no
+  schema change; a reviewer picks this if §3's field list must stay literally
+  closed, accepting that before/after stops being a pure state diff. (C) store
+  extras only in action_invocations.result — no audit_events change; a
+  reviewer picks this if the response envelope is considered the audit extras
+  record, accepting extras lose per-event linkage and the §6 append-only
+  guarantee (action_invocations is updatable by design, F30).
+  Smallest-safe default: proceed with audit_events exactly per §3 — every
+  option lands additively before the first extras writer exists.
+  Why this needs human sign-off: AUDIT model and logged fields (AGENTS.md
+  AMBIGUITY list); if the default were wrong the audit log would either lose
+  catalog-mandated evidence or corrupt diff semantics on a billing-grade trail.
+- Resolution:
+- Architecture impact: pending (likely amends the §3 audit_events row)
+
+### DEC-007 — 2026-07-05 — How is the platform actor represented in audit_events?
+- Status: OPEN
+- Raised by: SLICE-002 (schema authoring). Blocks SLICE-005 (workspace.create
+  writes an audit event as the platform actor) and later plan.set /
+  entitlement.override — not SLICE-002 itself.
+- Question: §5/§7 define `platform` as a distinct audited actor
+  (workspace.create, plan.set, entitlement.override) and DEC-005 fixes
+  actor_type='platform' rows in action_invocations, but §3 fixes
+  audit_events.actor_type as enum(person, agent, system). How is a
+  platform-actor action attributed in the audit log?
+  Options considered: (A) add 'platform' to the audit actor_type enum —
+  additive ALTER TYPE; a reviewer picks this for faithful attribution
+  matching action_invocations. (B) audit platform actions as
+  actor_type=system with a platform marker in extras — no enum change; a
+  reviewer picks this if §3's enum must stay closed, accepting 'system'
+  (defined as cron/detectors, §2) is overloaded and the marker depends on
+  DEC-006. (C) audit as person with a synthetic actor_id — rejected shape:
+  misattribution.
+  Smallest-safe default: proceed with §3's exact 3-value enum on audit_events
+  and a separate 4-value invocation_actor_type on action_invocations (DEC-005
+  requires 'platform' there) — every option remains additively implementable.
+  Why this needs human sign-off: AUDIT model / stored data formats (AGENTS.md
+  AMBIGUITY list); wrong attribution of platform actions on an append-only
+  trail cannot be corrected retroactively.
+- Resolution:
+- Architecture impact: pending (likely amends the §3 audit_events actor_type enum)
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
@@ -59,3 +117,9 @@ scope for every session until resolved.
 - 2026-07-05 SLICE-001: internal core package aliased as `@core/*` (tsconfig paths); package manager = npm with committed lockfile; CI runs on Node 24 (LTS), matching the npm major that generates the lockfile.
 - 2026-07-05 SLICE-001: §20.7 lint gate = `react/jsx-no-literals` scoped to app/**; §20.5 = `no-restricted-imports` (drizzle-orm, postgres, pg, @supabase/*) everywhere except core/db, plus @core/db banned inside app/.
 - 2026-07-05 SLICE-001: default locale hardcoded `de` in core/i18n/request.ts until per-person locale resolution attaches with auth (SLICE-008).
+- 2026-07-05 SLICE-002: §3 statuses/kinds/enums as native Postgres enum types; action_invocations gets its own invocation_actor_type enum ('person','agent','system','platform') per DEC-005 while audit_events keeps §3's exact 3-value actor_type; invocation_status includes 'pending' (F30).
+- 2026-07-05 SLICE-002: nullability follows §3's "?" markers except where architecture-internal consistency forces NULL: execution_windows.target_qty/unit (frozen copies of nullable commitment fields, A3), auth_devices.last_seen_at (no value before first request), action_invocations.result (row inserted pending, F30).
+- 2026-07-05 SLICE-002: single-column actor fields (captured_by_actor, source_actor, generated_by_actor) stored as jsonb {actor_type, actor_id}; commitments.valid_from/valid_to as date; idempotency_key text (deterministic natural keys, §5), client_key uuid (§5 "client uuid (= client_key)"); no verified_by column on execution_records — §12 defines the CSV's verified_by as the capturing actor (F32), i.e. captured_by_actor.
+- 2026-07-05 SLICE-002: unique indexes beyond §3's explicit ones, each a lookup-path necessity: workspaces.slug, auth_devices.token_hash and report_shares.token_hash (hashed-token resolution precedes workspace context, §12/§16), partial unique persons(workspace_id, auth_user_id) (F11 "unique per workspace").
+- 2026-07-05 SLICE-002: RLS = uniform SELECT/INSERT/UPDATE policies TO app_kernel (created NOLOGIN) comparing workspace_id to the app.workspace_id GUC, failing closed when unset; workspaces compares its own id; plans is read-only-global; no DELETE grant or policy on any table (nothing hard-deletes, §3); audit_events gets SELECT/INSERT only.
+- 2026-07-05 SLICE-002: migrations = sequential SQL in db/migrations applied by core/db/migrate.ts (one transaction per file), tracked in public.schema_migrations (RLS-enabled, no policies, invisible to app_kernel); the sandbox has no Docker daemon for `supabase start`, so SQL tests provision embedded PostgreSQL 17 (real Postgres, devDependencies embedded-postgres + pg + @types/pg), with TEST_DATABASE_URL as the local-Supabase override.
