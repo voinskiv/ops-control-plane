@@ -79,8 +79,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
     // `postgres` user is not superuser and PG16+ role semantics require an
     // explicit membership grant with the SET option (the migration's CREATE
     // ROLE leaves the creator with ADMIN, which suffices to self-grant).
+    // INHERIT FALSE keeps the membership step-down only: the admin may become
+    // app_kernel, never passively hold its grants.
     const who = await db.query<{ user: string }>("SELECT current_user AS user");
-    await db.query(`GRANT app_kernel TO "${who.rows[0]!.user}" WITH SET TRUE`);
+    await db.query(`GRANT app_kernel TO "${who.rows[0]!.user}" WITH SET TRUE, INHERIT FALSE`);
   } finally {
     await db.end();
   }
