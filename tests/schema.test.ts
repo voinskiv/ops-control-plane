@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 
 import { connect, type DbClient } from "@core/db/client";
+import { drizzleSchemaColumns } from "@core/db/schema";
 
 // The 22 §3 tables.
 const DOMAIN_TABLES = [
@@ -151,6 +152,40 @@ describe("§3 schema conventions", () => {
     const withCreatedAt = new Set(res.rows.map((r) => r.relname));
     for (const table of DOMAIN_TABLES) {
       expect(withCreatedAt.has(table), `${table}.created_at`).toBe(true);
+    }
+  });
+
+  it("Drizzle schema mirrors information_schema for every §3 table (SLICE-005)", async () => {
+    const drizzleTables = drizzleSchemaColumns();
+    expect(drizzleTables.map((table) => table.table).sort()).toEqual([...DOMAIN_TABLES].sort());
+
+    const res = await db.query<{
+      table_name: string;
+      column_name: string;
+      is_nullable: "YES" | "NO";
+      data_type: string;
+      udt_name: string;
+    }>(
+      `SELECT table_name, column_name, is_nullable, data_type, udt_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = ANY($1::text[])
+       ORDER BY table_name, ordinal_position`,
+      [drizzleTables.map((table) => table.table)],
+    );
+    const byTable = new Map<string, { name: string; type: string; notNull: boolean }[]>();
+    for (const row of res.rows) {
+      const type = row.data_type === "USER-DEFINED" ? row.udt_name : row.data_type;
+      const columns = byTable.get(row.table_name) ?? [];
+      columns.push({
+        name: row.column_name,
+        type,
+        notNull: row.is_nullable === "NO",
+      });
+      byTable.set(row.table_name, columns);
+    }
+
+    for (const table of drizzleTables) {
+      expect(byTable.get(table.table), table.table).toEqual(table.columns);
     }
   });
 });
