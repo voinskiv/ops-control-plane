@@ -29,6 +29,7 @@ export interface WorkspaceSnapshot {
   plan_code: string;
   settings: WorkspaceSettings;
   status: "active";
+  created_at: string;
 }
 
 export interface CreateWorkspaceParams {
@@ -44,6 +45,10 @@ export const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
   action_policies: {},
   retention_months: 24,
 };
+
+function timestampSnapshot(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
 
 export async function planSnapshotForCode(tx: Queryable, planCode: string): Promise<PlanSnapshot | null> {
   const db = drizzleFor(tx);
@@ -81,6 +86,7 @@ export async function createWorkspaceRow(tx: Queryable, params: CreateWorkspaceP
       planCode: workspaces.planCode,
       settings: workspaces.settings,
       status: workspaces.status,
+      createdAt: workspaces.createdAt,
     });
   const row = rows[0];
   if (row === undefined) {
@@ -93,5 +99,6 @@ export async function createWorkspaceRow(tx: Queryable, params: CreateWorkspaceP
     plan_code: row.planCode,
     settings: row.settings as WorkspaceSettings,
     status: "active",
+    created_at: timestampSnapshot(row.createdAt),
   };
 }

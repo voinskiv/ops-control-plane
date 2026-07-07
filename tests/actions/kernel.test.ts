@@ -105,6 +105,7 @@ async function workspaceById(workspaceId: string): Promise<{
   plan_code: string;
   settings: unknown;
   status: string;
+  created_at: Date;
 } | null> {
   const res = await admin.query<{
     id: string;
@@ -113,7 +114,8 @@ async function workspaceById(workspaceId: string): Promise<{
     plan_code: string;
     settings: unknown;
     status: string;
-  }>("SELECT id, name, slug, plan_code, settings, status FROM workspaces WHERE id = $1", [workspaceId]);
+    created_at: Date;
+  }>("SELECT id, name, slug, plan_code, settings, status, created_at FROM workspaces WHERE id = $1", [workspaceId]);
   return res.rows[0] ?? null;
 }
 
@@ -468,8 +470,9 @@ describe("idempotency (§20.2, F24, F30)", () => {
 
     const workspaceId = (first.result as { workspace_id?: string }).workspace_id;
     expect(workspaceId).toEqual(expect.any(String));
+    expect(first.result).toEqual({ workspace_id: workspaceId });
     const workspace = await workspaceById(workspaceId ?? "");
-    expect(workspace).toEqual({
+    expect(workspace).toMatchObject({
       id: workspaceId,
       name: input.name,
       slug: workspaceId,
@@ -483,18 +486,32 @@ describe("idempotency (§20.2, F24, F30)", () => {
       },
       status: "active",
     });
+    expect(workspace?.created_at).toBeInstanceOf(Date);
 
     const invocation = await invocationRow(key);
     expect(invocation?.status).toBe("ok");
     const events = await auditEventsFor(invocation?.id ?? "");
     expect(events).toHaveLength(1);
+    const after = events[0]?.after;
+    expect(after).toMatchObject({
+      id: workspaceId,
+      name: input.name,
+      slug: workspaceId,
+      plan_code: "pilot",
+      settings: workspace?.settings,
+      status: "active",
+    });
+    expect(after).not.toHaveProperty("plan_snapshot");
+    const afterCreatedAt =
+      typeof after === "object" && after !== null ? (after as { created_at?: unknown }).created_at : undefined;
+    expect(typeof afterCreatedAt).toBe("string");
+    expect(new Date(afterCreatedAt as string).toISOString()).toBe(workspace?.created_at.toISOString());
     expect(events[0]).toMatchObject({
       actor_type: "platform",
       actor_id: null,
       action: "workspace.create",
       entity_type: "workspaces",
       entity_id: workspaceId,
-      after: workspace,
       extras: {
         plan_snapshot: {
           code: "pilot",
