@@ -68,7 +68,15 @@ async function invocationRow(
 }
 
 async function auditEventsFor(invocationId: string): Promise<
-  { actor_type: string; actor_id: string | null; action: string; entity_type: string; entity_id: string; extras: unknown }[]
+  {
+    actor_type: string;
+    actor_id: string | null;
+    action: string;
+    entity_type: string;
+    entity_id: string;
+    after: unknown;
+    extras: unknown;
+  }[]
 > {
   const res = await admin.query<{
     actor_type: string;
@@ -76,9 +84,10 @@ async function auditEventsFor(invocationId: string): Promise<
     action: string;
     entity_type: string;
     entity_id: string;
+    after: unknown;
     extras: unknown;
   }>(
-    "SELECT actor_type, actor_id, action, entity_type, entity_id, extras FROM audit_events WHERE invocation_id = $1",
+    "SELECT actor_type, actor_id, action, entity_type, entity_id, after, extras FROM audit_events WHERE invocation_id = $1",
     [invocationId],
   );
   return res.rows;
@@ -87,6 +96,25 @@ async function auditEventsFor(invocationId: string): Promise<
 async function clientCount(clientId: string): Promise<number> {
   const res = await admin.query<{ n: string }>("SELECT count(*) AS n FROM clients WHERE id = $1", [clientId]);
   return Number(res.rows[0]?.n ?? 0);
+}
+
+async function workspaceById(workspaceId: string): Promise<{
+  id: string;
+  name: string;
+  slug: string;
+  plan_code: string;
+  settings: unknown;
+  status: string;
+} | null> {
+  const res = await admin.query<{
+    id: string;
+    name: string;
+    slug: string;
+    plan_code: string;
+    settings: unknown;
+    status: string;
+  }>("SELECT id, name, slug, plan_code, settings, status FROM workspaces WHERE id = $1", [workspaceId]);
+  return res.rows[0] ?? null;
 }
 
 registry.register({
@@ -430,6 +458,62 @@ describe("idempotency (§20.2, F24, F30)", () => {
     expect(Number(ws.rows[0]?.n)).toBe(1);
   });
 
+  it("workspace.create creates a tenant root with plan snapshot audit extras and replay stability (SLICE-005)", async () => {
+    const key = freshKey();
+    const input = { name: `Slice 005 ${randomUUID()}`, plan_code: "pilot" };
+    const first = await kernel.dispatch(platform, { name: "workspace.create", input, idempotencyKey: key });
+    const replay = await kernel.dispatch(platform, { name: "workspace.create", input, idempotencyKey: key });
+    expect(first.status).toBe("ok");
+    expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
+
+    const workspaceId = (first.result as { workspace_id?: string }).workspace_id;
+    expect(workspaceId).toEqual(expect.any(String));
+    const workspace = await workspaceById(workspaceId ?? "");
+    expect(workspace).toEqual({
+      id: workspaceId,
+      name: input.name,
+      slug: workspaceId,
+      plan_code: "pilot",
+      settings: {
+        tz: "Europe/Berlin",
+        default_locale: "de",
+        branding: {},
+        action_policies: {},
+        retention_months: 24,
+      },
+      status: "active",
+    });
+
+    const invocation = await invocationRow(key);
+    expect(invocation?.status).toBe("ok");
+    const events = await auditEventsFor(invocation?.id ?? "");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actor_type: "platform",
+      actor_id: null,
+      action: "workspace.create",
+      entity_type: "workspaces",
+      entity_id: workspaceId,
+      after: workspace,
+      extras: {
+        plan_snapshot: {
+          code: "pilot",
+          name: "Pilot",
+          limits: {},
+          price: {},
+        },
+      },
+    });
+
+    const counts = await admin.query<{ invocations: string; audits: string }>(
+      `SELECT
+         (SELECT count(*) FROM action_invocations WHERE idempotency_key = $1) AS invocations,
+         (SELECT count(*) FROM audit_events WHERE action = 'workspace.create' AND entity_id = $2) AS audits`,
+      [key, workspaceId],
+    );
+    expect(counts.rows[0]).toEqual({ invocations: "1", audits: "1" });
+  });
+
   it("two concurrent identical platform bootstraps commit once and answer identically (§20.2, DEC-005)", async () => {
     // Claim-before-execute is structurally impossible for the tenant-root
     // bootstrap (the pending row FK-references the workspace the action
@@ -529,6 +613,30 @@ describe("kernel transaction guarantees (§6, §21.3, F13, F4)", () => {
   });
 });
 
+describe("workspace.create authorization and validation (SLICE-005)", () => {
+  it("workspace.create is platform-only", async () => {
+    const key = freshKey();
+    const envelope = await kernel.dispatch(manager, {
+      name: "workspace.create",
+      input: { name: "Not Platform", plan_code: "pilot" },
+      idempotencyKey: key,
+    });
+    expect(envelope).toMatchObject({ status: "rejected", result: { code: "unauthorized" } });
+    const row = await invocationRow(key);
+    expect(row?.status).toBe("rejected");
+    expect(await auditEventsFor(row?.id ?? "")).toEqual([]);
+  });
+
+  it("workspace.create rejects pass-through fields", async () => {
+    const envelope = await kernel.dispatch(platform, {
+      name: "workspace.create",
+      input: { name: "Extra", plan_code: "pilot", slug: "not-allowed" },
+      idempotencyKey: freshKey(),
+    });
+    expect(envelope).toMatchObject({ status: "rejected", result: { code: "validation_failed" } });
+  });
+});
+
 describe("audit-per-executed-action property test (§20.3)", () => {
   // Every registered action must have a fixture here; SLICE-005+ extend this
   // map as production actions join the registry.
@@ -552,6 +660,11 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     },
     "test.fail_after_write": { actor: manager, input: () => ({ id: randomUUID() }), expected: "error" },
     "test.no_audit": { actor: manager, input: () => ({ id: randomUUID() }), expected: "error" },
+    "workspace.create": {
+      actor: platform,
+      input: () => ({ name: `Property ${randomUUID()}`, plan_code: "pilot" }),
+      expected: "ok",
+    },
   };
 
   it("every executed action yields ≥1 audit event in the same transaction; failures yield none", async () => {

@@ -28,10 +28,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-002
       Status: merged 2026-07-06 (PR #3), Done-when green in CI.
 
-- [ ] SLICE-004: Tenancy isolation test suite (RLS backstop proof)
+- [x] SLICE-004: Tenancy isolation test suite (RLS backstop proof)
       Architecture ref: §7, §20.4, F13
       Done when: workspace-A actor reading/writing workspace-B rows gets zero rows/denial on ≥3 representative tables plus a Storage-path check, with RLS active, including the deliberate kernel-workspace-filter-bypass case (§20.4)
       Depends on: SLICE-003
+      Status: merged 2026-07-07 (PR #5), Done-when green in CI.
 
 - [ ] SLICE-005: workspace.create action
       Architecture ref: §5 catalog, §3 (workspaces, plans)

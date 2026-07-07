@@ -2,6 +2,7 @@
 // catalog for the actions in scope through the current phase; production
 // actions register here starting with SLICE-005 (workspace.create).
 import type { ActionDefinition } from "./types";
+import { workspaceCreateAction } from "./workspace";
 
 export class ActionRegistry {
   private readonly definitions = new Map<string, ActionDefinition>();
@@ -24,3 +25,4 @@ export class ActionRegistry {
 
 // The application-wide registry the dispatch surface mounts.
 export const registry = new ActionRegistry();
+registry.register(workspaceCreateAction);
