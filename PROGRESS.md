@@ -40,10 +40,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-003
       Status: merged 2026-07-07 (PR #6), Done-when green in CI.
 
-- [ ] SLICE-006: person actions (create / update / deactivate / pseudonymize)
+- [x] SLICE-006: person actions (create / update / deactivate / pseudonymize)
       Architecture ref: §5 catalog, §3 (persons), §16 (erasure)
       Done when: all four actions execute through the kernel with catalog thresholds and audit extras (role changes, reason, GDPR basis note); pseudonymize replaces PII while history stays coherent; tests green
       Depends on: SLICE-005
+      Status: merged 2026-07-08 (PR #7), Done-when green in CI.
 
 - [ ] SLICE-007: client + site actions (create / update / archive; site activate / archive)
       Architecture ref: §5 catalog, §3 (clients, sites), §9 (active-site meter legibility)
@@ -249,6 +250,6 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
 - Appendix B kernel-internal ops have no phase assignment in ARCHITECTURE.md; they are slotted here with their owning feature (device.touch → SLICE-009, proof.upload_failed → SLICE-019, message.delivery_update → SLICE-027, share.view → SLICE-032, report.complete → SLICE-029) — confirm this mapping.
 - The F19 Phase 4 action list names only proposal.*/policy.demote_action but its scope needs doc.upload and doc.extract_commitments (assumed in-phase, SLICE-036) — confirm the list is non-exhaustive. (Phase 2's equivalent gap — escalation.tick/acknowledge, notify.send — was resolved by DEC-001.)
-- Phase 0 "Actions: that set" for workspace/person/client/site/device is read as the full catalog set for those entities, including person.pseudonymize and site.activate/archive (billing-meter actions before entitlements exist) — confirm.
+- Phase 0 "Actions: that set" for workspace/person/client/site/device is read as the full catalog set for those entities, including person.pseudonymize (resolved RESOLVED by DEC-008) and site.activate (resolved RESOLVED by DEC-009: ships Phase 0, human_only, sole meter-moving event); site.archive stays deferred per DEC-008/DEC-009 — no phase assignment yet. DEC-009 also opens a new, unresolved carried-forward item: sites.status now includes a non-billable 'draft' state (site.create writes it) whose stale-draft handling, entitlement-metering treatment, and visibility rules are unspecified — a future slice must resolve this before it is built against.
 - The window `open → missed` transition is part of the §4 window machine (Phase 1, SLICE-014 defines the machine) but its only trigger is the missed-window detector, which is Phase 2 scope; the transition is defined in Phase 1 and first exercised by SLICE-025 — confirm the split.
 - The Phase 3 web-push spike is marked optional in §19; SLICE-033 is included but flagged non-gating — confirm whether it is in v1 scope at all.

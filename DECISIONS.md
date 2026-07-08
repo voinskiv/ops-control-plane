@@ -212,7 +212,7 @@ scope for every session until resolved.
   Doc changes via doc-PR by the operator.
 
 ### DEC-009 — 2026-07-08 — SLICE-007 client/site scope, site.create initial status, and supervisor_person_ids authz contract
-- Status: OPEN
+- Status: RESOLVED
 - Raised by: SLICE-007 implementation stop (client + site actions). No code
   written — this entry precedes it per AGENTS.md CHANGE-REQUEST FORMAT.
 - Question: five blocking sub-questions, each independently sufficient to stop
@@ -307,10 +307,46 @@ scope for every session until resolved.
   window-close visibility across the supervisor scope boundary. Sub-question
   (4) fixes stored data formats and the exported public API surface. All four
   categories are on AGENTS.md's STOP list.
-- Resolution: (pending — human sign-off required; no agent may author this)
-- Architecture impact: (pending resolution) — candidate touch points are §5
-  rows 153–155, §3 sites states, §19 Phase 0 action set, and PROGRESS.md's
-  Bootstrap ambiguities note + SLICE-007 "Done when".
+- Resolution:
+  1. (Q1, site.activate/archive lifecycle) Path B — add a non-billable
+     'draft' state to site_status. site.create writes 'draft'. site.activate
+     ships this slice as human_only and is the sole meter-moving event.
+     site.archive stays deferred per DEC-008. Rationale: §9's [FIXED]
+     meter-legibility guarantee is about the gate CLASS of the meter-moving
+     action, not merely a human in the loop. A proposal_gated site.create
+     that writes 'active' would move the customer-billable meter through an
+     action on AgentProposal's autonomous-safe promotion path — violating §9
+     silently the day it promotes, with no schema signal. Reversibility
+     seals it: an unused enum value is free if wrong; a false billable event
+     on an append-only, billing-grade (Leistungsnachweis) trail is a
+     permanent defect.
+  2. (Q2, site.create status) Writes 'draft' (follows from Q1).
+  3. (Q3, supervisor_person_ids validation) Yes. Entries must be existing,
+     active, in-workspace persons with role_class='supervisor'. Reject any
+     id failing this. It is an authz grant, not a persistence field; an
+     unvalidated write is a cross-workspace visibility hole on an
+     append-only trail.
+  4. (Q4, client/site input shape) Confirmed: DEC-008 shape — flat 1:1
+     columns, patch update semantics, null clears. clients.contact / sites.
+     address jsonb shapes to be fixed by the implementing agent accordingly
+     (implementation detail, logged as a one-liner per AGENTS.md AMBIGUITY,
+     not re-opened here).
+  5. (Q5, client.archive cascade) Reject-while-sites-active. client.archive
+     refuses if the client has any non-archived site; forces explicit
+     teardown rather than silent cascade on billing-relevant records.
+  Carried-forward, NOT resolved now: Path B's 'draft' state introduces
+  further lifecycle questions left unspecified — stale-draft handling,
+  whether drafts count toward active-site entitlement metering (§9), and
+  draft-visibility rules. This is a named open item for a future slice; no
+  answer is assumed here and none should be built against it.
+  Approved by: Vitali Voinski (operator), 2026-07-08; transcribed verbatim
+  by the implementing agent.
+- Architecture impact: amends the §3 sites states (adds 'draft' — schema
+  migration rides with the SLICE-007 implementation PR, not this doc-PR);
+  amends §19 Phase 0 action set (site.create/update/activate confirmed in
+  Phase 0; site.archive confirmed deferred); PROGRESS.md Bootstrap
+  ambiguities note updated (site portion resolved, draft-lifecycle item
+  carried forward). Doc changes via doc-PR by the operator.
 
 ---
 
