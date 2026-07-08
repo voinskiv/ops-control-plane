@@ -18,6 +18,7 @@ import { handleActionsPost } from "@core/actions/http";
 import { Kernel } from "@core/actions/kernel";
 import { ActionRegistry, registry as applicationRegistry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
+import { setAuthTransportForTests } from "@core/auth/transport";
 import { connect, type DbClient } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
 
@@ -125,6 +126,16 @@ async function adminInsertPerson(status: "active" | "inactive" | "pseudonymized"
     `INSERT INTO persons (id, workspace_id, display_name, role_class, locale, status)
      VALUES ($1, $2, 'Property Person', 'worker', 'de', $3)`,
     [personId, workspaceId, status],
+  );
+  return personId;
+}
+
+async function adminInsertInvitablePerson(): Promise<string> {
+  const personId = randomUUID();
+  await admin.query(
+    `INSERT INTO persons (id, workspace_id, display_name, role_class, email, locale, status)
+     VALUES ($1, $2, 'Invitable Person', 'manager', $3, 'de', 'active')`,
+    [personId, workspaceId, `invite-${personId}@example.test`],
   );
   return personId;
 }
@@ -301,6 +312,18 @@ for (const definition of applicationRegistry.list()) {
 }
 
 beforeAll(async () => {
+  setAuthTransportForTests({
+    async sendInvite() {
+      return undefined;
+    },
+    async sendMagicLink() {
+      return undefined;
+    },
+    async userFromAccessToken() {
+      return null;
+    },
+  });
+
   const url = inject("databaseUrl");
   admin = await connect(url);
   kernelDb = createKernelDb(url);
@@ -339,6 +362,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  setAuthTransportForTests(null);
   await kernelDb.end();
   await admin.end();
 });
@@ -733,6 +757,11 @@ describe("audit-per-executed-action property test (§20.3)", () => {
         person_id: await adminInsertPerson(),
         legal_basis: { kind: "other", note: "Property test" },
       }),
+      expected: "ok",
+    },
+    "person.invite": {
+      actor: manager,
+      input: async () => ({ person_id: await adminInsertInvitablePerson() }),
       expected: "ok",
     },
     "client.create": { actor: manager, input: () => ({ name: `Property Client ${randomUUID()}` }), expected: "ok" },

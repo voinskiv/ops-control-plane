@@ -15,8 +15,11 @@ const bodySchema = z.object({
 const REJECTION_HTTP_STATUS: Record<string, number> = {
   unauthenticated: 401,
   unauthorized: 403,
+  no_dashboard_membership: 403,
+  auth_email_mismatch: 403,
   idempotency_conflict: 409,
   last_owner_protected: 409,
+  auth_already_linked: 409,
 };
 
 function httpStatusFor(envelope: ResponseEnvelope): number {

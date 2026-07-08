@@ -2,12 +2,31 @@
   "app": {
     "title": "Ops Control Plane"
   },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "email": "Email",
+      "submit": "Send magic link",
+      "sent": "Magic link sent."
+    },
+    "shell": {
+      "workspace": "Workspace: {workspace}"
+    },
+    "role": {
+      "owner": "Owner",
+      "manager": "Manager"
+    }
+  },
   "errors": {
     "action": {
       "unknown_action": "Unknown action.",
       "unauthenticated": "Not signed in.",
       "unauthorized": "You are not authorized to run this action.",
       "validation_failed": "Invalid input.",
+      "invite_ineligible": "This person cannot receive a dashboard invite.",
+      "auth_already_linked": "This person is already linked to a sign-in identity.",
+      "auth_email_mismatch": "This invite does not match the signed-in email address.",
+      "no_dashboard_membership": "No eligible dashboard membership was found.",
       "idempotency_conflict": "This idempotency key was already used with different input.",
       "entitlement_denied": "Not included in the current plan.",
       "proposal_gating_unavailable": "Agent proposals are not available yet.",

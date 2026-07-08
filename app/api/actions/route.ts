@@ -1,12 +1,17 @@
 import { handleActionsPost } from "@core/actions/http";
 import { getKernel } from "@core/actions/runtime";
+import { cookieHeader } from "@core/auth/session";
+import { getDashboardAuth } from "@core/auth/runtime";
 
-// §5: single action dispatch endpoint. Actor resolution attaches with auth
-// (SLICE-008 manager sessions, SLICE-009 device tokens); until then every
-// request resolves to no actor and receives the typed unauthenticated
-// rejection — the kernel is never reached without an actor.
+// §5: single action dispatch endpoint. SLICE-008 attaches manager person
+// actor resolution; SLICE-009 adds device-token supervisors.
 export async function POST(request: Request): Promise<Response> {
   const body: unknown = await request.json().catch(() => null);
-  const { httpStatus, envelope } = await handleActionsPost(getKernel, null, body);
-  return Response.json(envelope, { status: httpStatus });
+  const resolved = await getDashboardAuth().resolveActor(request.headers.get("cookie"));
+  const { httpStatus, envelope } = await handleActionsPost(getKernel, resolved.actor, body);
+  const response = Response.json(envelope, { status: httpStatus });
+  for (const cookie of resolved.cookies) {
+    response.headers.append("set-cookie", cookieHeader(cookie));
+  }
+  return response;
 }

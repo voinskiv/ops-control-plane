@@ -3,7 +3,7 @@
 import { createKernelDb } from "../db/kernel";
 import { noopUnlimitedResolver } from "./entitlement";
 import { Kernel } from "./kernel";
-import { registry } from "./registry";
+import { internalRegistry, registry } from "./registry";
 
 let kernel: Kernel | null = null;
 
@@ -13,7 +13,7 @@ export function getKernel(): Kernel {
     if (connectionString === undefined || connectionString === "") {
       throw new Error("DATABASE_URL is not configured");
     }
-    kernel = new Kernel(createKernelDb(connectionString), registry, noopUnlimitedResolver);
+    kernel = new Kernel(createKernelDb(connectionString), registry, noopUnlimitedResolver, internalRegistry);
   }
   return kernel;
 }

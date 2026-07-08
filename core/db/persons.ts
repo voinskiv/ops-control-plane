@@ -1,6 +1,6 @@
 // SLICE-006 person persistence. Domain CRUD stays behind core/db and uses the
 // Drizzle mirror introduced for action slices.
-import { and, asc, count, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
 
 import type { Queryable } from "./client";
 import { drizzleFor } from "./drizzle";
@@ -48,6 +48,14 @@ export interface PersonPatch {
 export interface RevokedDeviceAudit {
   id: string;
   beforeStatus: "pending" | "active";
+}
+
+export interface DashboardMembership {
+  person_id: string;
+  workspace_id: string;
+  workspace_display_name: string;
+  role_class: Extract<RoleClass, "owner" | "manager">;
+  locale: SupportedLocale;
 }
 
 export const PSEUDONYMIZE_CLEARED_FIELDS = [
@@ -164,6 +172,49 @@ export async function personById(
   return row === undefined ? null : toPersonSnapshot(row);
 }
 
+export async function dashboardMembershipsByAuthUserId(
+  tx: Queryable,
+  authUserId: string,
+): Promise<DashboardMembership[]> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .select({
+      personId: persons.id,
+      workspaceId: persons.workspaceId,
+      workspaceDisplayName: workspaces.name,
+      roleClass: persons.roleClass,
+      locale: persons.locale,
+    })
+    .from(persons)
+    .innerJoin(workspaces, eq(workspaces.id, persons.workspaceId))
+    .where(
+      and(
+        eq(persons.authUserId, authUserId),
+        eq(persons.status, "active"),
+        inArray(persons.roleClass, ["owner", "manager"]),
+        eq(workspaces.status, "active"),
+      ),
+    )
+    .orderBy(asc(workspaces.name), asc(persons.id));
+
+  return rows.map((row) => ({
+    person_id: row.personId,
+    workspace_id: row.workspaceId,
+    workspace_display_name: row.workspaceDisplayName,
+    role_class: row.roleClass === "owner" ? "owner" : "manager",
+    locale: supportedLocale(row.locale),
+  }));
+}
+
+export async function dashboardMembershipByWorkspace(
+  tx: Queryable,
+  authUserId: string,
+  workspaceId: string,
+): Promise<DashboardMembership | null> {
+  const memberships = await dashboardMembershipsByAuthUserId(tx, authUserId);
+  return memberships.find((membership) => membership.workspace_id === workspaceId) ?? null;
+}
+
 export async function activeOwnerCount(tx: Queryable, workspaceId: string): Promise<number> {
   const db = drizzleFor(tx);
   const rows = await db
@@ -197,6 +248,28 @@ export async function updatePersonRow(
     throw new Error(`person ${personId} disappeared during update`);
   }
   return toPersonSnapshot(row);
+}
+
+export async function linkAuthUserToPerson(
+  tx: Queryable,
+  params: {
+    workspaceId: string;
+    personId: string;
+    authUserId: string;
+    email: string;
+  },
+): Promise<{ person: PersonSnapshot } | { rejected: "validation_failed" | "auth_already_linked" | "auth_email_mismatch" }> {
+  const before = await personById(tx, params.workspaceId, params.personId);
+  if (before === null || before.status !== "active" || (before.role_class !== "owner" && before.role_class !== "manager")) {
+    return { rejected: "validation_failed" };
+  }
+  if (before.email === null || before.email !== params.email) {
+    return { rejected: "auth_email_mismatch" };
+  }
+  if (before.auth_user_id !== null) {
+    return { rejected: "auth_already_linked" };
+  }
+  return { person: await updatePersonRow(tx, params.workspaceId, params.personId, { authUserId: params.authUserId }) };
 }
 
 export async function revokeNonRevokedAuthDevices(
