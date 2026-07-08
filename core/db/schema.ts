@@ -15,7 +15,9 @@ export const roleClass = pgEnum("role_class", ["owner", "manager", "supervisor",
 export const personStatus = pgEnum("person_status", ["active", "inactive", "pseudonymized"]);
 export const deviceStatus = pgEnum("device_status", ["pending", "active", "revoked"]);
 export const clientStatus = pgEnum("client_status", ["active", "archived"]);
-export const siteStatus = pgEnum("site_status", ["active", "archived"]);
+// DEC-009: 'draft' is non-billable — site.create writes it; site.activate is
+// the sole transition onto 'active' (the §9 meter-moving event).
+export const siteStatus = pgEnum("site_status", ["draft", "active", "archived"]);
 export const commitmentType = pgEnum("commitment_type", ["coverage", "output", "service_scope", "proof", "recovery"]);
 export const commitmentStatus = pgEnum("commitment_status", ["draft", "active", "paused", "completed", "archived"]);
 export const windowStatus = pgEnum("window_status", ["scheduled", "open", "fulfilled", "shortfall", "missed", "closed"]);

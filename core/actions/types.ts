@@ -34,7 +34,11 @@ export type RejectionCode =
   | "idempotency_conflict"
   | "entitlement_denied"
   | "proposal_gating_unavailable"
-  | "last_owner_protected";
+  | "last_owner_protected"
+  // DEC-009 Q5: client.archive refuses while any of its sites is not
+  // archived (reject-while-sites-active, no cascade) — same tier as
+  // last_owner_protected (SLICE-006), a typed domain-guard rejection.
+  | "client_has_active_sites";
 
 // §5: the HTTP surface returns {status, result, warnings}; the same envelope
 // is stored in action_invocations.result so a replay is byte-identical (F24).
