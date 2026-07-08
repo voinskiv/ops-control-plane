@@ -211,6 +211,143 @@ scope for every session until resolved.
   (rule 9); Bootstrap ambiguities note updated (person portion resolved).
   Doc changes via doc-PR by the operator.
 
+### DEC-009 — 2026-07-08 — SLICE-007 client/site scope, site.create initial status, and supervisor_person_ids authz contract
+- Status: RESOLVED
+- Raised by: SLICE-007 implementation stop (client + site actions). No code
+  written — this entry precedes it per AGENTS.md CHANGE-REQUEST FORMAT.
+- Question: five blocking sub-questions, each independently sufficient to stop
+  the slice.
+
+  **(1) Are `site.activate` / `site.archive` in Phase 0 at all?**
+  §19 Phase 0 says only "Actions: that set". PROGRESS.md "Bootstrap
+  ambiguities" reads that as the full catalog set "including person.pseudonymize
+  and site.activate/archive (billing-meter actions before entitlements exist) —
+  confirm." DEC-008 resolved the person half and states verbatim: "the
+  site.activate/archive portion remains open for SLICE-007." AGENTS.md: a note
+  marked "confirm" is an open question — do not build on it until a RESOLVED
+  entry exists. None does.
+  Options: (A) in Phase 0 — the meter is written before any entitlement gate
+  enforces it (Phase 0 resolver is noop-unlimited, §19); a reviewer picks this
+  if PROGRESS.md's SLICE-007 "Done when" is to be met as written. (B) defer
+  activate/archive to Phase 5 alongside the `sites.active` gate (SLICE-040), so
+  the meter action and its enforcement ship together; a reviewer picks this to
+  avoid a billing-relevant write path existing unenforced for four phases —
+  requires amending SLICE-007's "Done when", which is a CHANGE-REQUEST per
+  AGENTS.md WORKFLOW. (C) ship activate/archive in Phase 0 but declare
+  `gate: sites.active` on them now, resolved by the noop resolver until
+  SLICE-040 populates plans.
+  Smallest-safe default: none — hard blocked. Building them presumes (A);
+  omitting them presumes (B). Both are visible in the action catalog surface.
+
+  **(2) What `status` does `site.create` write?**
+  §3 fixes sites states as exactly {active, archived} — there is no pre-active
+  state. §5 makes `site.create` proposal_gated but `site.activate` human_only
+  "(billing meter)". §9 [FIXED]: "Active site = the metered value unit —
+  sites.status='active', with site.activate/site.archive as explicit audited
+  human actions so the meter is legible to customers."
+  Options: (A) create → 'active': a proposal_gated action increments the §9
+  meter directly and human_only `site.activate` is unreachable for new sites,
+  contradicting §9's legibility rationale. (B) create → 'archived': the meter
+  stays legible and activate is the sole entry onto it, but a newly created
+  site sits in a state §3 names 'archived' before it was ever active. (C) §3's
+  state list is incomplete and sites need a third pre-active state — a schema
+  change, which §19 [FIXED] forbids outside Phase 0 migrations and which
+  AGENTS.md routes through CHANGE-REQUEST.
+  Smallest-safe default: none — hard blocked. (A) and (B) differ in whether a
+  proposal_gated action can move the billing meter.
+
+  **(3) What validates `sites.settings.supervisor_person_ids` on write?**
+  §3 calls it "the authz source for supervisor site scope, F12"; §8 (F12): "a
+  supervisor's site set is exactly the sites whose settings.supervisor_person_ids
+  include them ... that membership is the authz source deciding which day-packs
+  they see and which windows they may close or raise exceptions on."
+  Options: (A) accept any uuid array unvalidated — a manager (or an approved
+  agent proposal) can grant day-pack visibility to any uuid, including a person
+  row in another workspace, with only RLS on the day-pack read as backstop.
+  (B) validate each id references an existing, active, in-workspace person.
+  (C) additionally require `role_class='supervisor'` — rejects listing a
+  manager, who per §8/F6 already inherits supervisor rights workspace-wide.
+  Smallest-safe default: none — hard blocked. AGENTS.md: "if candidate
+  interpretations differ in what any actor can see or do, it is not an
+  implementation detail — stop instead," and a write that widens who can see
+  what is SECURITY/AUTHZ scope regardless of read/write classification.
+
+  **(4) What is the `fields` input contract for client.* and site.*?**
+  §5 gives "fields" (client) and "client_id, fields" (site). Undefined: how
+  `update` identifies its target; full-replacement vs patch semantics; the
+  shape of `clients.contact jsonb` and `sites.address jsonb`; whether
+  `settings` is writable wholesale on `site.create`. DEC-008 treated the
+  identical class of question for persons as CHANGE-REQUEST material and
+  resolved it by operator sign-off (flat fields 1:1 to §3 columns; patch
+  semantics; explicit null clears). Action input schemas are exported as JSON
+  Schema and are "the future public API and MCP tool surface" (§5), and jsonb
+  shapes are stored data formats — both on AGENTS.md's STOP list.
+  Smallest-safe default: mirror DEC-008 (flat 1:1 columns, patch update keyed
+  by client_id/site_id, explicit null clears nullable columns) — valid only if
+  the operator also fixes the two jsonb shapes, which DEC-008 did not cover.
+
+  **(5) Does `client.archive` cascade to that client's sites?**
+  §3: nothing hard-deletes, lifecycle via status; FKs ON DELETE RESTRICT.
+  clients and sites each have {active, archived}. If archiving a client leaves
+  its sites `status='active'`, those sites keep counting on the §9 active-site
+  meter and keep appearing in supervisor day-packs.
+  Options: (A) no cascade — archived client retains billable active sites.
+  (B) cascade to sites in the same kernel transaction, auditing one event per
+  site; but if (1) resolves that site.archive is human_only/meter-legible, a
+  proposal_gated client.archive would then move the meter transitively.
+  (C) reject client.archive while any of its sites is active.
+  Smallest-safe default: none — hard blocked; (A) and (B) differ in billing
+  outcome, and (B)'s legality depends on the answer to (1).
+
+  Why this needs human sign-off: sub-questions (1), (2) and (5) affect PRODUCT
+  behavior and the §9 [FIXED] billing meter — the concrete harm is a
+  proposal_gated write path silently moving a customer-billable, "legible"
+  meter, on an append-only audit trail that cannot be retroactively corrected.
+  Sub-question (3) is SECURITY/AUTHZ: the wrong default grants day-pack and
+  window-close visibility across the supervisor scope boundary. Sub-question
+  (4) fixes stored data formats and the exported public API surface. All four
+  categories are on AGENTS.md's STOP list.
+- Resolution:
+  1. (Q1, site.activate/archive lifecycle) Path B — add a non-billable
+     'draft' state to site_status. site.create writes 'draft'. site.activate
+     ships this slice as human_only and is the sole meter-moving event.
+     site.archive stays deferred per DEC-008. Rationale: §9's [FIXED]
+     meter-legibility guarantee is about the gate CLASS of the meter-moving
+     action, not merely a human in the loop. A proposal_gated site.create
+     that writes 'active' would move the customer-billable meter through an
+     action on AgentProposal's autonomous-safe promotion path — violating §9
+     silently the day it promotes, with no schema signal. Reversibility
+     seals it: an unused enum value is free if wrong; a false billable event
+     on an append-only, billing-grade (Leistungsnachweis) trail is a
+     permanent defect.
+  2. (Q2, site.create status) Writes 'draft' (follows from Q1).
+  3. (Q3, supervisor_person_ids validation) Yes. Entries must be existing,
+     active, in-workspace persons with role_class='supervisor'. Reject any
+     id failing this. It is an authz grant, not a persistence field; an
+     unvalidated write is a cross-workspace visibility hole on an
+     append-only trail.
+  4. (Q4, client/site input shape) Confirmed: DEC-008 shape — flat 1:1
+     columns, patch update semantics, null clears. clients.contact / sites.
+     address jsonb shapes to be fixed by the implementing agent accordingly
+     (implementation detail, logged as a one-liner per AGENTS.md AMBIGUITY,
+     not re-opened here).
+  5. (Q5, client.archive cascade) Reject-while-sites-active. client.archive
+     refuses if the client has any non-archived site; forces explicit
+     teardown rather than silent cascade on billing-relevant records.
+  Carried-forward, NOT resolved now: Path B's 'draft' state introduces
+  further lifecycle questions left unspecified — stale-draft handling,
+  whether drafts count toward active-site entitlement metering (§9), and
+  draft-visibility rules. This is a named open item for a future slice; no
+  answer is assumed here and none should be built against it.
+  Approved by: Vitali Voinski (operator), 2026-07-08; transcribed verbatim
+  by the implementing agent.
+- Architecture impact: amends the §3 sites states (adds 'draft' — schema
+  migration rides with the SLICE-007 implementation PR, not this doc-PR);
+  amends §19 Phase 0 action set (site.create/update/activate confirmed in
+  Phase 0; site.archive confirmed deferred); PROGRESS.md Bootstrap
+  ambiguities note updated (site portion resolved, draft-lifecycle item
+  carried forward). Doc changes via doc-PR by the operator.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
