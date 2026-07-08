@@ -11,7 +11,13 @@
       "idempotency_conflict": "Dieser Idempotenzschlüssel wurde bereits mit anderer Eingabe verwendet.",
       "entitlement_denied": "Im aktuellen Plan nicht enthalten.",
       "proposal_gating_unavailable": "Agenten-Vorschläge sind noch nicht verfügbar.",
+      "last_owner_protected": "Der letzte aktive Owner kann nicht entfernt werden.",
       "internal_error": "Interner Fehler."
+    }
+  },
+  "warnings": {
+    "action": {
+      "no_email_for_invitable_role": "Für diesen Owner oder Manager ist noch keine E-Mail-Adresse hinterlegt."
     }
   }
 }

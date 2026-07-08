@@ -11,7 +11,13 @@
       "idempotency_conflict": "This idempotency key was already used with different input.",
       "entitlement_denied": "Not included in the current plan.",
       "proposal_gating_unavailable": "Agent proposals are not available yet.",
+      "last_owner_protected": "The last active owner cannot be removed.",
       "internal_error": "Internal error."
+    }
+  },
+  "warnings": {
+    "action": {
+      "no_email_for_invitable_role": "This owner or manager has no email address yet."
     }
   }
 }

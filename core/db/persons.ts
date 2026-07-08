@@ -1,0 +1,239 @@
+// SLICE-006 person persistence. Domain CRUD stays behind core/db and uses the
+// Drizzle mirror introduced for action slices.
+import { and, asc, count, eq, ne } from "drizzle-orm";
+
+import type { Queryable } from "./client";
+import { drizzleFor } from "./drizzle";
+import { authDevices, persons, workspaces } from "./schema";
+
+export type RoleClass = "owner" | "manager" | "supervisor" | "worker";
+export type PersonStatus = "active" | "inactive" | "pseudonymized";
+export type SupportedLocale = "de" | "en";
+
+export interface PersonSnapshot {
+  id: string;
+  workspace_id: string;
+  display_name: string;
+  role_class: RoleClass;
+  auth_user_id: string | null;
+  email: string | null;
+  phone: string | null;
+  locale: SupportedLocale;
+  pin_hash: string | null;
+  status: PersonStatus;
+  created_at: string;
+}
+
+export interface CreatePersonParams {
+  id: string;
+  workspaceId: string;
+  displayName: string;
+  roleClass: RoleClass;
+  email?: string;
+  phone?: string;
+  locale: SupportedLocale;
+}
+
+export interface PersonPatch {
+  displayName?: string;
+  roleClass?: RoleClass;
+  email?: string | null;
+  phone?: string | null;
+  locale?: SupportedLocale;
+  status?: PersonStatus;
+  authUserId?: string | null;
+  pinHash?: string | null;
+}
+
+export interface RevokedDeviceAudit {
+  id: string;
+  beforeStatus: "pending" | "active";
+}
+
+export const PSEUDONYMIZE_CLEARED_FIELDS = [
+  "display_name",
+  "email",
+  "phone",
+  "pin_hash",
+  "auth_user_id",
+] as const;
+
+const personSelection = {
+  id: persons.id,
+  workspaceId: persons.workspaceId,
+  displayName: persons.displayName,
+  roleClass: persons.roleClass,
+  authUserId: persons.authUserId,
+  email: persons.email,
+  phone: persons.phone,
+  locale: persons.locale,
+  pinHash: persons.pinHash,
+  status: persons.status,
+  createdAt: persons.createdAt,
+};
+
+function timestampSnapshot(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function supportedLocale(value: unknown): SupportedLocale {
+  return value === "en" ? "en" : "de";
+}
+
+function toPersonSnapshot(row: {
+  id: string;
+  workspaceId: string;
+  displayName: string;
+  roleClass: RoleClass;
+  authUserId: string | null;
+  email: string | null;
+  phone: string | null;
+  locale: string;
+  pinHash: string | null;
+  status: PersonStatus;
+  createdAt: Date | string;
+}): PersonSnapshot {
+  return {
+    id: row.id,
+    workspace_id: row.workspaceId,
+    display_name: row.displayName,
+    role_class: row.roleClass,
+    auth_user_id: row.authUserId,
+    email: row.email,
+    phone: row.phone,
+    locale: supportedLocale(row.locale),
+    pin_hash: row.pinHash,
+    status: row.status,
+    created_at: timestampSnapshot(row.createdAt),
+  };
+}
+
+export function pseudonymizedDisplayName(personId: string): string {
+  return `Person ${personId.replaceAll("-", "").slice(-6).toLowerCase()}`;
+}
+
+export async function workspaceDefaultLocale(tx: Queryable, workspaceId: string): Promise<SupportedLocale | null> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .select({ settings: workspaces.settings })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    return null;
+  }
+  const settings = row.settings as { default_locale?: unknown };
+  return supportedLocale(settings.default_locale);
+}
+
+export async function createPersonRow(tx: Queryable, params: CreatePersonParams): Promise<PersonSnapshot> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .insert(persons)
+    .values({
+      id: params.id,
+      workspaceId: params.workspaceId,
+      displayName: params.displayName,
+      roleClass: params.roleClass,
+      email: params.email ?? null,
+      phone: params.phone ?? null,
+      locale: params.locale,
+      status: "active",
+    })
+    .returning(personSelection);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error("person.create insert returned no row");
+  }
+  return toPersonSnapshot(row);
+}
+
+export async function personById(
+  tx: Queryable,
+  workspaceId: string,
+  personId: string,
+): Promise<PersonSnapshot | null> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .select(personSelection)
+    .from(persons)
+    .where(and(eq(persons.workspaceId, workspaceId), eq(persons.id, personId)))
+    .limit(1);
+  const row = rows[0];
+  return row === undefined ? null : toPersonSnapshot(row);
+}
+
+export async function activeOwnerCount(tx: Queryable, workspaceId: string): Promise<number> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .select({ n: count() })
+    .from(persons)
+    .where(
+      and(eq(persons.workspaceId, workspaceId), eq(persons.roleClass, "owner"), eq(persons.status, "active")),
+    );
+  return Number(rows[0]?.n ?? 0);
+}
+
+export async function lockWorkspaceForOwnerGuard(tx: Queryable, workspaceId: string): Promise<boolean> {
+  const res = await tx.query("SELECT id FROM workspaces WHERE id = $1 FOR UPDATE", [workspaceId]);
+  return res.rowCount === 1;
+}
+
+export async function updatePersonRow(
+  tx: Queryable,
+  workspaceId: string,
+  personId: string,
+  patch: PersonPatch,
+): Promise<PersonSnapshot> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .update(persons)
+    .set(patch)
+    .where(and(eq(persons.workspaceId, workspaceId), eq(persons.id, personId)))
+    .returning(personSelection);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error(`person ${personId} disappeared during update`);
+  }
+  return toPersonSnapshot(row);
+}
+
+export async function revokeNonRevokedAuthDevices(
+  tx: Queryable,
+  workspaceId: string,
+  personId: string,
+): Promise<RevokedDeviceAudit[]> {
+  const db = drizzleFor(tx);
+  const before = await db
+    .select({ id: authDevices.id, status: authDevices.status })
+    .from(authDevices)
+    .where(
+      and(
+        eq(authDevices.workspaceId, workspaceId),
+        eq(authDevices.personId, personId),
+        ne(authDevices.status, "revoked"),
+      ),
+    )
+    .orderBy(asc(authDevices.id));
+
+  if (before.length === 0) {
+    return [];
+  }
+
+  await db
+    .update(authDevices)
+    .set({ status: "revoked" })
+    .where(
+      and(
+        eq(authDevices.workspaceId, workspaceId),
+        eq(authDevices.personId, personId),
+        ne(authDevices.status, "revoked"),
+      ),
+    );
+
+  return before.map((row) => ({
+    id: row.id,
+    beforeStatus: row.status === "pending" ? "pending" : "active",
+  }));
+}
