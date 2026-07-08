@@ -16,7 +16,7 @@ import { z } from "zod";
 import { noopUnlimitedResolver } from "@core/actions/entitlement";
 import { handleActionsPost } from "@core/actions/http";
 import { Kernel } from "@core/actions/kernel";
-import { ActionRegistry, registry as applicationRegistry } from "@core/actions/registry";
+import { ActionRegistry, internalRegistry, registry as applicationRegistry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
 import { setAuthTransportForTests } from "@core/auth/transport";
 import { connect, type DbClient } from "@core/db/client";
@@ -130,14 +130,15 @@ async function adminInsertPerson(status: "active" | "inactive" | "pseudonymized"
   return personId;
 }
 
-async function adminInsertInvitablePerson(): Promise<string> {
+async function adminInsertInvitablePerson(): Promise<{ personId: string; email: string }> {
   const personId = randomUUID();
+  const email = `invite-${personId}@example.test`;
   await admin.query(
     `INSERT INTO persons (id, workspace_id, display_name, role_class, email, locale, status)
      VALUES ($1, $2, 'Invitable Person', 'manager', $3, 'de', 'active')`,
-    [personId, workspaceId, `invite-${personId}@example.test`],
+    [personId, workspaceId, email],
   );
-  return personId;
+  return { personId, email };
 }
 
 async function adminInsertClient(status: "active" | "archived" = "active"): Promise<string> {
@@ -314,7 +315,7 @@ for (const definition of applicationRegistry.list()) {
 beforeAll(async () => {
   setAuthTransportForTests({
     async sendInvite() {
-      return undefined;
+      return { inviteId: `invite:${randomUUID()}` };
     },
     async sendMagicLink() {
       return undefined;
@@ -327,7 +328,7 @@ beforeAll(async () => {
   const url = inject("databaseUrl");
   admin = await connect(url);
   kernelDb = createKernelDb(url);
-  kernel = new Kernel(kernelDb, registry, noopUnlimitedResolver);
+  kernel = new Kernel(kernelDb, registry, noopUnlimitedResolver, internalRegistry);
 
   const clientId = randomUUID();
   const commitmentId = randomUUID();
@@ -761,7 +762,7 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     },
     "person.invite": {
       actor: manager,
-      input: async () => ({ person_id: await adminInsertInvitablePerson() }),
+      input: async () => ({ person_id: (await adminInsertInvitablePerson()).personId }),
       expected: "ok",
     },
     "client.create": { actor: manager, input: () => ({ name: `Property Client ${randomUUID()}` }), expected: "ok" },
@@ -799,6 +800,26 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     },
   };
 
+  const internalFixtures: Record<
+    string,
+    { actor: Actor; input: () => Promise<unknown> | unknown; expected: "ok" | "error" }
+  > = {
+    "person.link_auth": {
+      actor: { type: "system", workspaceId },
+      input: async () => {
+        const person = await adminInsertInvitablePerson();
+        const invited = await kernel.dispatch(manager, {
+          name: "person.invite",
+          input: { person_id: person.personId },
+          idempotencyKey: freshKey(),
+        });
+        expect(invited.status).toBe("ok");
+        return { person_id: person.personId, auth_user_id: randomUUID(), email: person.email };
+      },
+      expected: "ok",
+    },
+  };
+
   it("every executed action yields ≥1 audit event in the same transaction; failures yield none", async () => {
     for (const definition of registry.list()) {
       const fixture = fixtures[definition.name];
@@ -808,6 +829,28 @@ describe("audit-per-executed-action property test (§20.3)", () => {
       }
       const key = freshKey();
       const envelope = await kernel.dispatch(fixture.actor, {
+        name: definition.name,
+        input: await fixture.input(),
+        idempotencyKey: key,
+      });
+      expect(envelope.status, definition.name).toBe(fixture.expected);
+      const row = await invocationRow(key);
+      expect(row, definition.name).not.toBeNull();
+      const events = await auditEventsFor(row?.id ?? "");
+      if (fixture.expected === "ok") {
+        expect(events.length, `${definition.name} must audit`).toBeGreaterThanOrEqual(1);
+      } else {
+        expect(events, `${definition.name} must not leak audit events`).toEqual([]);
+      }
+    }
+    for (const definition of internalRegistry.list()) {
+      const fixture = internalFixtures[definition.name];
+      expect(fixture, `missing §20.3 internal fixture for ${definition.name}`).toBeDefined();
+      if (!fixture) {
+        continue;
+      }
+      const key = freshKey();
+      const envelope = await kernel.dispatchInternal(fixture.actor, {
         name: definition.name,
         input: await fixture.input(),
         idempotencyKey: key,

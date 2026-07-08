@@ -9,12 +9,16 @@ export interface SendInviteParams {
   personId: string;
 }
 
+export interface SentInvite {
+  inviteId: string;
+}
+
 export interface SendMagicLinkParams {
   email: string;
 }
 
 export interface AuthTransport {
-  sendInvite(params: SendInviteParams): Promise<void>;
+  sendInvite(params: SendInviteParams): Promise<SentInvite>;
   sendMagicLink(params: SendMagicLinkParams): Promise<void>;
   userFromAccessToken(accessToken: string): Promise<AuthIdentity | null>;
 }
@@ -50,7 +54,7 @@ function supabaseUrl(path: string, query?: URLSearchParams): string {
   return `${base}/auth/v1/${path}${suffix}`;
 }
 
-async function supabasePost(path: string, serviceRole: boolean, body: unknown, query?: URLSearchParams): Promise<void> {
+async function supabasePost(path: string, serviceRole: boolean, body: unknown, query?: URLSearchParams): Promise<unknown> {
   const key = serviceRole ? requiredEnv("SUPABASE_SERVICE_ROLE_KEY") : requiredEnv("SUPABASE_ANON_KEY");
   const response = await fetch(supabaseUrl(path, query), {
     method: "POST",
@@ -64,6 +68,20 @@ async function supabasePost(path: string, serviceRole: boolean, body: unknown, q
   if (!response.ok) {
     throw new Error(`Supabase Auth ${path} returned ${response.status}`);
   }
+  return response.json().catch(() => null);
+}
+
+function inviteIdFromResponse(body: unknown): string {
+  const candidate = body as {
+    id?: unknown;
+    user?: { id?: unknown };
+    data?: { id?: unknown; user?: { id?: unknown } };
+  } | null;
+  const id = candidate?.user?.id ?? candidate?.data?.user?.id ?? candidate?.data?.id ?? candidate?.id;
+  if (typeof id !== "string" || id.length === 0) {
+    throw new Error("Supabase Auth invite response did not include an invite id");
+  }
+  return id;
 }
 
 const supabaseTransport: AuthTransport = {
@@ -72,12 +90,13 @@ const supabaseTransport: AuthTransport = {
     redirectTo.searchParams.set("workspace_id", params.workspaceId);
     redirectTo.searchParams.set("person_id", params.personId);
     const query = new URLSearchParams({ redirect_to: redirectTo.toString() });
-    await supabasePost(
+    const body = await supabasePost(
       "invite",
       true,
       { email: params.email, data: { workspace_id: params.workspaceId, person_id: params.personId } },
       query,
     );
+    return { inviteId: inviteIdFromResponse(body) };
   },
   async sendMagicLink(params) {
     const redirectTo = new URL("/auth/session", appOrigin());

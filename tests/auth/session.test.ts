@@ -8,9 +8,10 @@ import { internalRegistry, registry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
 import { DashboardAuth, AUTH_TOKEN_COOKIE, WORKSPACE_COOKIE, type CookieChange } from "@core/auth/session";
 import { setAuthTransportForTests, type AuthIdentity, type AuthTransport, type SendInviteParams } from "@core/auth/transport";
-import type { AuthDb } from "@core/db/auth";
+import { createAuthDb, type AuthDb } from "@core/db/auth";
 import { connect, type DbClient } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
+import { dashboardMembershipByWorkspace, dashboardMembershipsByAuthUserId } from "@core/db/persons";
 
 let admin: DbClient;
 let kernelDb: KernelDb;
@@ -105,6 +106,7 @@ beforeAll(async () => {
   kernel = new Kernel(kernelDb, registry, noopUnlimitedResolver, internalRegistry);
   const authDb: AuthDb = {
     withClient: (fn) => fn(admin),
+    withWorkspace: (_workspaceId, fn) => fn(admin),
     end: async () => undefined,
   };
   auth = new DashboardAuth(authDb, () => kernel);
@@ -164,6 +166,7 @@ beforeEach(() => {
   const transport: AuthTransport = {
     async sendInvite(params) {
       invites.push(params);
+      return { inviteId: `invite:${params.personId}` };
     },
     async sendMagicLink() {
       return undefined;
@@ -189,6 +192,12 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     const invited = await dispatch(ownerA, "person.invite", { person_id: managerAId });
     expect(invited.status).toBe("ok");
     expect(invites).toEqual([{ email: "manager-a@example.test", workspaceId: workspaceA, personId: managerAId }]);
+    const inviteAudit = await admin.query<{ extras: { auth_invite_id?: unknown; invite_sent?: unknown } }>(
+      "SELECT extras FROM audit_events WHERE action = 'person.invite' AND entity_id = $1",
+      [managerAId],
+    );
+    expect(inviteAudit.rows[0]?.extras).toEqual({ auth_invite_id: `invite:${managerAId}` });
+    expect(inviteAudit.rows[0]?.extras.invite_sent).toBeUndefined();
 
     const authUserId = randomUUID();
     const accessToken = tokenFor({ id: authUserId, email: "manager-a@example.test" });
@@ -229,6 +238,15 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     expect(established.envelope.status).toBe("ok");
     expect((established.envelope.result as { selected_workspace_id?: string | null }).selected_workspace_id).toBeNull();
     expect((established.envelope.result as { memberships?: unknown[] }).memberships).toHaveLength(2);
+    expect((established.envelope.result as { memberships?: unknown[] }).memberships).toEqual(
+      expect.arrayContaining([
+        { workspace_id: workspaceA, workspace_display_name: "Auth A GmbH" },
+        { workspace_id: workspaceB, workspace_display_name: "Auth B GmbH" },
+      ]),
+    );
+    for (const membership of (established.envelope.result as { memberships?: Record<string, unknown>[] }).memberships ?? []) {
+      expect(Object.keys(membership).sort()).toEqual(["workspace_display_name", "workspace_id"]);
+    }
 
     const selected = await auth.establish(accessToken, workspaceB);
     expect(selected.envelope.status).toBe("ok");
@@ -279,6 +297,54 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     }
   });
 
+  it("runs auth request reads as app_kernel under RLS while the DEC-011 lookup lists eligible memberships", async () => {
+    const url = inject("databaseUrl");
+    const authDb = createAuthDb(url);
+    const authUserId = randomUUID();
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "RLS Manager",
+      roleClass: "manager",
+      email: "rls-manager@example.test",
+      authUserId,
+    });
+
+    try {
+      const raw = await authDb.withClient((client) =>
+        client.query<{ current_user: string; n: string }>("SELECT current_user, count(*) AS n FROM workspaces"),
+      );
+      expect(raw.rows[0]).toMatchObject({ current_user: "app_kernel", n: "0" });
+
+      const memberships = await authDb.withClient((client) => dashboardMembershipsByAuthUserId(client, authUserId));
+      expect(memberships).toEqual([{ workspace_id: workspaceA, workspace_display_name: "Auth A GmbH" }]);
+
+      const selected = await authDb.withWorkspace(workspaceA, (client) =>
+        dashboardMembershipByWorkspace(client, authUserId, workspaceA),
+      );
+      expect(selected).toMatchObject({ person_id: personId, role_class: "manager", workspace_id: workspaceA });
+    } finally {
+      await authDb.end();
+    }
+  });
+
+  it("rejects invite acceptance when no person.invite was issued for the person", async () => {
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Uninvited Manager",
+      roleClass: "manager",
+      email: "uninvited@example.test",
+    });
+    const accessToken = tokenFor({ id: randomUUID(), email: "uninvited@example.test" });
+
+    const accepted = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
+    expect(accepted.envelope).toMatchObject({ status: "rejected", result: { code: "invite_ineligible" } });
+    expect(await personAuthUser(personId)).toBeNull();
+  });
+
   it("rejects invite acceptance when the Supabase identity email no longer matches the person email", async () => {
     const personId = randomUUID();
     await insertPerson({
@@ -288,12 +354,40 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
       roleClass: "manager",
       email: "expected@example.test",
     });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
     const authUserId = randomUUID();
     const accessToken = tokenFor({ id: authUserId, email: "other@example.test" });
 
     const accepted = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
     expect(accepted.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
     expect(await personAuthUser(personId)).toBeNull();
+  });
+
+  it("does not persist failed link acceptance so a corrected email can re-invite and link with the same identity", async () => {
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Corrected Manager",
+      roleClass: "manager",
+      email: "old@example.test",
+    });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const authUserId = randomUUID();
+    const accessToken = tokenFor({ id: authUserId, email: "new@example.test" });
+
+    const mismatch = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
+    expect(mismatch.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
+    expect(await personAuthUser(personId)).toBeNull();
+
+    expect(await dispatch(ownerA, "person.update", { person_id: personId, email: "new@example.test" })).toMatchObject({
+      status: "ok",
+    });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+
+    const linked = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
+    expect(linked.envelope.status).toBe("ok");
+    expect(await personAuthUser(personId)).toBe(authUserId);
   });
 
   it("rejects person.invite once the target is already linked", async () => {

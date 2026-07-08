@@ -58,6 +58,11 @@ export interface DashboardMembership {
   locale: SupportedLocale;
 }
 
+export interface PublicDashboardMembership {
+  workspace_id: string;
+  workspace_display_name: string;
+}
+
 export const PSEUDONYMIZE_CLEARED_FIELDS = [
   "display_name",
   "email",
@@ -175,7 +180,22 @@ export async function personById(
 export async function dashboardMembershipsByAuthUserId(
   tx: Queryable,
   authUserId: string,
-): Promise<DashboardMembership[]> {
+): Promise<PublicDashboardMembership[]> {
+  const res = await tx.query<PublicDashboardMembership>(
+    "SELECT workspace_id, workspace_display_name FROM app_dashboard_memberships_for_auth_user($1)",
+    [authUserId],
+  );
+  return res.rows.map((row) => ({
+    workspace_id: row.workspace_id,
+    workspace_display_name: row.workspace_display_name,
+  }));
+}
+
+export async function dashboardMembershipByWorkspace(
+  tx: Queryable,
+  authUserId: string,
+  workspaceId: string,
+): Promise<DashboardMembership | null> {
   const db = drizzleFor(tx);
   const rows = await db
     .select({
@@ -190,29 +210,24 @@ export async function dashboardMembershipsByAuthUserId(
     .where(
       and(
         eq(persons.authUserId, authUserId),
+        eq(persons.workspaceId, workspaceId),
         eq(persons.status, "active"),
         inArray(persons.roleClass, ["owner", "manager"]),
         eq(workspaces.status, "active"),
       ),
     )
-    .orderBy(asc(workspaces.name), asc(persons.id));
-
-  return rows.map((row) => ({
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    return null;
+  }
+  return {
     person_id: row.personId,
     workspace_id: row.workspaceId,
     workspace_display_name: row.workspaceDisplayName,
     role_class: row.roleClass === "owner" ? "owner" : "manager",
     locale: supportedLocale(row.locale),
-  }));
-}
-
-export async function dashboardMembershipByWorkspace(
-  tx: Queryable,
-  authUserId: string,
-  workspaceId: string,
-): Promise<DashboardMembership | null> {
-  const memberships = await dashboardMembershipsByAuthUserId(tx, authUserId);
-  return memberships.find((membership) => membership.workspace_id === workspaceId) ?? null;
+  };
 }
 
 export async function activeOwnerCount(tx: Queryable, workspaceId: string): Promise<number> {
@@ -250,15 +265,31 @@ export async function updatePersonRow(
   return toPersonSnapshot(row);
 }
 
-export async function linkAuthUserToPerson(
+type LinkAuthRejected = "validation_failed" | "auth_already_linked" | "auth_email_mismatch" | "invite_ineligible";
+
+async function hasPersonInvite(tx: Queryable, workspaceId: string, personId: string): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1
+     FROM audit_events
+     WHERE workspace_id = $1
+       AND action = 'person.invite'
+       AND entity_type = 'persons'
+       AND entity_id = $2
+       AND extras ? 'auth_invite_id'
+     LIMIT 1`,
+    [workspaceId, personId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function preflightLinkAuthUserToPerson(
   tx: Queryable,
   params: {
     workspaceId: string;
     personId: string;
-    authUserId: string;
     email: string;
   },
-): Promise<{ person: PersonSnapshot } | { rejected: "validation_failed" | "auth_already_linked" | "auth_email_mismatch" }> {
+): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
   const before = await personById(tx, params.workspaceId, params.personId);
   if (before === null || before.status !== "active" || (before.role_class !== "owner" && before.role_class !== "manager")) {
     return { rejected: "validation_failed" };
@@ -268,6 +299,25 @@ export async function linkAuthUserToPerson(
   }
   if (before.auth_user_id !== null) {
     return { rejected: "auth_already_linked" };
+  }
+  if (!(await hasPersonInvite(tx, params.workspaceId, params.personId))) {
+    return { rejected: "invite_ineligible" };
+  }
+  return { ok: true };
+}
+
+export async function linkAuthUserToPerson(
+  tx: Queryable,
+  params: {
+    workspaceId: string;
+    personId: string;
+    authUserId: string;
+    email: string;
+  },
+): Promise<{ person: PersonSnapshot } | { rejected: LinkAuthRejected }> {
+  const preflight = await preflightLinkAuthUserToPerson(tx, params);
+  if ("rejected" in preflight) {
+    return preflight;
   }
   return { person: await updatePersonRow(tx, params.workspaceId, params.personId, { authUserId: params.authUserId }) };
 }

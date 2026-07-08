@@ -385,7 +385,7 @@ export const personInviteAction: ActionDefinition<z.infer<typeof personInviteInp
       return outcomeRejected("auth_already_linked");
     }
 
-    await getAuthTransport().sendInvite({
+    const invite = await getAuthTransport().sendInvite({
       email: target.email ?? "",
       workspaceId: target.workspace_id,
       personId: target.id,
@@ -398,7 +398,7 @@ export const personInviteAction: ActionDefinition<z.infer<typeof personInviteInp
           entityType: "persons",
           entityId: target.id,
           after: { auth_user_id: target.auth_user_id },
-          extras: { invite_sent: true },
+          extras: { auth_invite_id: invite.inviteId },
         },
       ],
     };

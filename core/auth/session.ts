@@ -6,7 +6,9 @@ import type { AuthDb } from "../db/auth";
 import {
   dashboardMembershipByWorkspace,
   dashboardMembershipsByAuthUserId,
+  preflightLinkAuthUserToPerson,
   type DashboardMembership,
+  type PublicDashboardMembership,
 } from "../db/persons";
 import { getAuthTransport, type AuthIdentity } from "./transport";
 
@@ -136,7 +138,9 @@ export class DashboardAuth {
       return rejected("unauthenticated", [clearAuthCookie(), clearWorkspaceCookie()]);
     }
 
-    const memberships = await this.authDb.withClient((client) => dashboardMembershipsByAuthUserId(client, identity.id));
+    const memberships: PublicDashboardMembership[] = await this.authDb.withClient((client) =>
+      dashboardMembershipsByAuthUserId(client, identity.id),
+    );
     if (memberships.length === 0) {
       return rejected("no_dashboard_membership", [setAuthCookie(accessToken), clearWorkspaceCookie()]);
     }
@@ -144,8 +148,10 @@ export class DashboardAuth {
     const requestedWorkspace = selectedWorkspaceId ?? (memberships.length === 1 ? memberships[0]?.workspace_id : undefined);
     const cookies = [setAuthCookie(accessToken)];
     if (requestedWorkspace !== undefined) {
-      const selected = memberships.find((membership) => membership.workspace_id === requestedWorkspace);
-      if (selected === undefined) {
+      const selected = await this.authDb.withWorkspace(requestedWorkspace, (client) =>
+        dashboardMembershipByWorkspace(client, identity.id, requestedWorkspace),
+      );
+      if (selected === null) {
         return rejected("no_dashboard_membership", [setAuthCookie(accessToken), clearWorkspaceCookie()]);
       }
       cookies.push(setWorkspaceCookie(selected.workspace_id));
@@ -193,6 +199,17 @@ export class DashboardAuth {
       return rejected("unauthenticated", [clearAuthCookie(), clearWorkspaceCookie()]);
     }
 
+    const preflight = await this.authDb.withWorkspace(workspaceId.data, (client) =>
+      preflightLinkAuthUserToPerson(client, {
+        workspaceId: workspaceId.data,
+        personId: personId.data,
+        email: identity.email,
+      }),
+    );
+    if ("rejected" in preflight) {
+      return rejected(preflight.rejected, [setAuthCookie(params.accessToken), clearWorkspaceCookie()]);
+    }
+
     const envelope = await this.getKernel().dispatchInternal(
       { type: "system", workspaceId: workspaceId.data },
       {
@@ -216,7 +233,7 @@ export class DashboardAuth {
     if (identity === null) {
       return { actor: null, cookies: [clearAuthCookie(), clearWorkspaceCookie()] };
     }
-    const membership = await this.authDb.withClient((client) =>
+    const membership = await this.authDb.withWorkspace(cookies.workspaceId, (client) =>
       dashboardMembershipByWorkspace(client, identity.id, cookies.workspaceId ?? ""),
     );
     if (membership === null) {
