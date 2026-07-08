@@ -12,6 +12,7 @@
       "entitlement_denied": "Not included in the current plan.",
       "proposal_gating_unavailable": "Agent proposals are not available yet.",
       "last_owner_protected": "The last active owner cannot be removed.",
+      "client_has_active_sites": "This client has sites that are not archived and cannot be archived.",
       "internal_error": "Internal error."
     }
   },

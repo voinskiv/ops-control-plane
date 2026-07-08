@@ -129,6 +129,26 @@ async function adminInsertPerson(status: "active" | "inactive" | "pseudonymized"
   return personId;
 }
 
+async function adminInsertClient(status: "active" | "archived" = "active"): Promise<string> {
+  const clientId = randomUUID();
+  await admin.query(
+    `INSERT INTO clients (id, workspace_id, name, contact, status) VALUES ($1, $2, 'Property Client', '{}', $3)`,
+    [clientId, workspaceId, status],
+  );
+  return clientId;
+}
+
+async function adminInsertSite(status: "draft" | "active" | "archived", clientId?: string): Promise<string> {
+  const siteId = randomUUID();
+  const owningClientId = clientId ?? (await adminInsertClient());
+  await admin.query(
+    `INSERT INTO sites (id, workspace_id, client_id, name, address, settings, status)
+     VALUES ($1, $2, $3, 'Property Site', '{}', '{}', $4)`,
+    [siteId, workspaceId, owningClientId, status],
+  );
+  return siteId;
+}
+
 registry.register({
   name: "test.client_create",
   actors: { minHumanRole: "manager", system: true },
@@ -714,6 +734,39 @@ describe("audit-per-executed-action property test (§20.3)", () => {
         legal_basis: { kind: "other", note: "Property test" },
       }),
       expected: "ok",
+    },
+    "client.create": { actor: manager, input: () => ({ name: `Property Client ${randomUUID()}` }), expected: "ok" },
+    "client.update": {
+      actor: manager,
+      input: async () => ({ client_id: await adminInsertClient(), name: "Property Updated" }),
+      expected: "ok",
+    },
+    "client.archive": {
+      actor: manager,
+      input: async () => ({ client_id: await adminInsertClient() }),
+      expected: "ok",
+    },
+    "site.create": {
+      actor: manager,
+      input: async () => ({ client_id: await adminInsertClient(), name: `Property Site ${randomUUID()}` }),
+      expected: "ok",
+    },
+    "site.update": {
+      actor: manager,
+      input: async () => ({ site_id: await adminInsertSite("draft"), name: "Property Site Updated" }),
+      expected: "ok",
+    },
+    "site.activate": {
+      actor: manager,
+      input: async () => ({ site_id: await adminInsertSite("draft") }),
+      expected: "ok",
+    },
+    // DEC-008/DEC-009: registered per catalog for §21.2's exact-match, but
+    // deferred — its handler always throws (see core/actions/site.ts).
+    "site.archive": {
+      actor: manager,
+      input: async () => ({ site_id: await adminInsertSite("active") }),
+      expected: "error",
     },
   };
 
