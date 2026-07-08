@@ -348,6 +348,159 @@ scope for every session until resolved.
   ambiguities note updated (site portion resolved, draft-lifecycle item
   carried forward). Doc changes via doc-PR by the operator.
 
+### DEC-010 — 2026-07-08 — SLICE-008 manager auth: auth_user_id population, active-workspace session contract, login eligibility, membership listing
+- Status: RESOLVED
+- Raised by: SLICE-008 implementation stop (manager auth — magic link, session,
+  login + authenticated shell). No code written — this entry precedes it per
+  AGENTS.md CHANGE-REQUEST FORMAT.
+- Question: four blocking sub-questions, each independently sufficient to stop
+  the slice.
+
+  **(1) What populates `persons.auth_user_id`?**
+  §3 persons: "auth_user_id uuid? (Supabase Auth user; unique per workspace;
+  populated at invite acceptance — F11)". No invite action exists in the §5
+  catalog, and §16 / §19 Phase 0 define no invite flow. SLICE-008's done-when
+  assumes the magic link "resolves to a persons row via auth_user_id" without
+  defining how that column ever got its value.
+  Options: (A) auto-link on first magic-link login by exact email match against
+  `persons.email` — no catalog change; consequence: `person.update` of an email
+  (manager-level today, on the AgentProposal promotion path later) becomes an
+  access grant — whoever controls that inbox gains the person's roles at next
+  login; also needs a rule for the same email appearing on persons rows in
+  several workspaces (F11 uniqueness is per workspace, not global). (B) an
+  explicit invite step (e.g. `person.invite` issuing the Supabase Auth invite;
+  auth_user_id written at acceptance) — the literal reading of §3's "invite
+  acceptance"; consequence: adds a catalog action and an acceptance route — a
+  visible API-surface change only a DEC can authorize. (C) platform-actor
+  manual linking — smallest surface; consequence: operator-in-the-loop for
+  every manager onboarding; incompatible with Phase 5 self-serve workspace
+  creation (SLICE-041 depends on SLICE-008).
+  Smallest-safe default: none — hard blocked. The options differ in who can
+  gain login access to a workspace.
+
+  **(2) Where does the active workspace live, and what re-validates it?**
+  §16: "with the active workspace explicit in the session". Undefined: the
+  trust anchor and revocation latency.
+  Options: (A) workspace_id as a Supabase JWT claim — stamped at mint;
+  deactivation or role change survives until token refresh (stale-claim authz
+  window); switching workspaces = re-mint. (B) the auth session carries
+  identity only; the selected workspace_id (own httpOnly cookie) is re-validated
+  on every request against an active persons row for (auth_user_id,
+  workspace_id) before the kernel sets the `app.workspace_id` GUC —
+  consequence: one indexed lookup per request; revocation is immediate; the
+  client-held value is selection intent, never authority. (C) a server-side
+  session table — durable and revocable, but a table §3 does not define
+  (schema change; Phase 0 migrations could still carry it, but only a DEC can
+  authorize it).
+  Smallest-safe default (if allowed to proceed): (B) — least authority held
+  client-side, immediate revocation, reversible toward (A) or (C). Remains
+  STOP because the options differ in what a deactivated actor can still see
+  during the stale window (TENANCY).
+
+  **(3) Who may establish a dashboard session, and what do edge resolutions do?**
+  §16 names managers for the magic link; §8 fixes surfaces (supervisor → PWA
+  capture, worker → none in v1) and F6 inheritance covers action grants, not
+  surfaces. Unruled: (a) an identity resolving to zero persons rows — typed
+  rejection at session establishment vs. an empty no-workspace shell; (b)
+  status='inactive' persons — DEC-008 defined deactivate without stating its
+  login effect (pseudonymized is settled: the DEC-008 recipe NULLs
+  auth_user_id); (c) supervisors/workers who do have an email and magic-link
+  in — whether those memberships are pickable and whether they reach the
+  authenticated shell at all.
+  Smallest-safe default: only active persons with role_class in {owner,
+  manager} establish dashboard sessions; zero-membership identities and every
+  other resolution receive one typed, catalog-translated rejection. Offered as
+  a default but still STOP: each case decides who can see what surface.
+
+  **(4) May session establishment list the identity's workspace memberships before SLICE-010 mounts the reads layer?**
+  F11 permits multiple memberships, so login must select among them; core/reads
+  mounts only in SLICE-010 (which depends on 008). A membership list
+  (workspace id + name per active persons row of the identity) is a new read
+  exposing cross-workspace data to an identity — AGENTS.md classifies any read
+  that widens who-can-see-what as SECURITY/AUTHZ scope.
+  Options: (A) the session-establishment route returns the identity's
+  memberships (workspace id + display name only), justified by §16's F11
+  sentence — consequence: a read endpoint exists before the reads layer, owned
+  by auth; (B) Phase 0 auto-selects when exactly one active membership exists
+  and returns a typed error for multi-membership identities until SLICE-010 —
+  grants least, but arguably under-delivers SLICE-008's done-when sentence
+  "one auth identity can hold roles in multiple workspaces (F11)".
+  Smallest-safe default: none — (A) and (B) differ in both exposure and
+  delivered scope.
+
+  Not asked (settled): the authenticated shell renders catalog strings only
+  with no data reads (SLICE-008 done-when); magic-link email transport is
+  Supabase Auth SMTP → Resend, infra config (F23, Appendix table); login
+  itself writes no audit_event — it is not a §5 catalog action and audit
+  events exist only inside kernel transactions (§6), so Supabase Auth's own
+  logs cover it.
+
+  Why this needs human sign-off: (1) and (3) are SECURITY/AUTHZ — the concrete
+  harm is an email-match or eligibility default silently granting dashboard
+  access to the wrong identity. (2) is TENANCY — the active-workspace anchor
+  is what every per-transaction `app.workspace_id` GUC derives from. (4)
+  creates a who-can-see-what read. All four categories are on AGENTS.md's
+  STOP list, and every one is visible outside the code (session cookies,
+  rejection responses, API surface), so none qualifies as an
+  implementation detail.
+- Resolution:
+  1. (Q1, auth_user_id population) Option B — explicit invite. §3's "populated
+     at invite acceptance" is binding text: Option A (auto-link by email match)
+     would contradict it and turn `person.update` of an email into an access
+     grant; Option C breaks Phase 5 self-serve workspace creation (SLICE-041).
+     Add a §5 catalog action `person.invite` (actors O, M; human_only — it
+     grants dashboard access and sends mail; input `person_id`; idempotency
+     client uuid). Preconditions: target status='active', role_class in
+     {owner, manager}, email present, auth_user_id IS NULL; re-invite permitted
+     while still unlinked, typed rejection once linked. Transport is the
+     Supabase Auth invite email over SMTP → Resend (F23), not
+     outbound_messages. Acceptance carries the (workspace, person) binding and
+     is completed by a kernel-internal op `person.link_auth` (Appendix B
+     pattern) that writes `auth_user_id` only after verifying the accepting
+     auth identity's email still equals `persons.email`, emitting an audit
+     event. F11 holds as one invite per workspace: the same auth user links to
+     one persons row in each workspace independently.
+  2. (Q2, active workspace) Option B — per-request re-validation. The Supabase
+     session carries identity only. The selected `workspace_id` lives in its
+     own httpOnly cookie as selection intent, never authority: every request
+     re-resolves (auth_user_id, workspace_id) to an active, eligible persons
+     row before the kernel sets the per-transaction `app.workspace_id` GUC;
+     failure clears the cookie and returns a typed rejection. Workspace
+     switching is an explicit endpoint running the identical validation.
+     Cost: one indexed lookup per request (the partial unique
+     persons(workspace_id, auth_user_id) index from SLICE-002 serves it).
+     Benefit: deactivation and pseudonymization revoke access immediately —
+     no stale-claim window, which Option A's JWT claim cannot offer. Remains
+     reversible toward A or C if the lookup ever measures.
+  3. (Q3, session eligibility) Dashboard sessions are established only for
+     persons with status='active' and role_class in {owner, manager}. An
+     identity resolving to zero qualifying memberships receives one typed,
+     catalog-translated rejection at session establishment — the Supabase
+     identity may exist, no workspace session is granted. Inactive persons are
+     excluded: deactivation means access removal. Supervisors and workers with
+     an email do not qualify for the dashboard and their memberships never
+     appear in the picker; their surface remains the PWA via device enrollment
+     (§8 surfaces table, §16). Pseudonymized persons are already unreachable —
+     DEC-008's recipe NULLs `auth_user_id`.
+  4. (Q4, membership listing) Option A. The session-establishment route returns
+     the identity's qualifying memberships only — workspace id + display name,
+     filtered by rule 3, no other field — and the endpoint is owned by the auth
+     route, not `core/reads` (which mounts in SLICE-010). §16's "active
+     workspace explicit in the session" together with F11 requires a selection
+     step to exist; Option B would lock multi-workspace identities out until
+     SLICE-010 and under-deliver SLICE-008's "Done when" as written.
+  `person.invite` and `person.link_auth` ship in Phase 0 / SLICE-008 — they are
+  the mechanism §3's persons row already presumes, not new product scope.
+  Proposal authored by the implementing agent (Claude Fable 5); approved
+  without edit by Vitali Voinski (operator), 2026-07-08; transcribed by the
+  implementing agent.
+- Architecture impact: amends the §16 auth paragraph (invite-acceptance
+  linking, the per-request-revalidated session contract, dashboard eligibility);
+  amends the §5 action catalog (adds the `person.invite` row); amends
+  Appendix B (adds the `person.link_auth` kernel-internal op); §19 Phase 0
+  action set covers both. No schema change (`persons.auth_user_id` and its
+  partial unique index already exist). Doc changes via doc-PR by the operator.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
