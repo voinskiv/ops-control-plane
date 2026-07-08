@@ -34,10 +34,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-003
       Status: merged 2026-07-07 (PR #5), Done-when green in CI.
 
-- [ ] SLICE-005: workspace.create action
+- [x] SLICE-005: workspace.create action
       Architecture ref: §5 catalog, §3 (workspaces, plans)
       Done when: workspace.create (platform actor, human_only) creates a workspace with plan snapshot in audit extras; audit + idempotency tests green for the action
       Depends on: SLICE-003
+      Status: merged 2026-07-07 (PR #6), Done-when green in CI.
 
 - [ ] SLICE-006: person actions (create / update / deactivate / pseudonymize)
       Architecture ref: §5 catalog, §3 (persons), §16 (erasure)
