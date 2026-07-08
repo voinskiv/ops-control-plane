@@ -33,7 +33,8 @@ export type RejectionCode =
   | "validation_failed"
   | "idempotency_conflict"
   | "entitlement_denied"
-  | "proposal_gating_unavailable";
+  | "proposal_gating_unavailable"
+  | "last_owner_protected";
 
 // §5: the HTTP surface returns {status, result, warnings}; the same envelope
 // is stored in action_invocations.result so a replay is byte-identical (F24).
@@ -71,6 +72,20 @@ export interface ExecOutcome {
   audit: AuditDraft[];
 }
 
+export interface ExecRejected {
+  rejected: RejectionCode;
+}
+
+export type ExecResult = ExecOutcome | ExecRejected;
+
+export function outcomeRejected(code: RejectionCode): ExecRejected {
+  return { rejected: code };
+}
+
+export function isRejectedOutcome(outcome: ExecResult): outcome is ExecRejected {
+  return "rejected" in outcome;
+}
+
 export interface ExecContext {
   // Transaction-scoped connection running as app_kernel with the
   // app.workspace_id and app.kernel_op GUCs set (§7, F4).
@@ -101,5 +116,5 @@ export interface ActionDefinition<In = unknown> {
   // §9 entitlement gate needs, resolved centrally; Phase 0 resolver is
   // noop-unlimited (§19 Phase 0).
   gates?: string[];
-  execute(ctx: ExecContext, input: In): Promise<ExecOutcome>;
+  execute(ctx: ExecContext, input: In): Promise<ExecResult>;
 }

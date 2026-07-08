@@ -17,6 +17,7 @@ import {
   envelopeError,
   envelopeOk,
   envelopeRejected,
+  isRejectedOutcome,
   type Actor,
   type ExecContext,
   type Invocation,
@@ -147,6 +148,16 @@ export class Kernel {
       // loser rolls back completely and retries into the replay path.
       await insertPendingRow();
       const outcome = await definition.execute(ctx, parsed.data);
+      if (isRejectedOutcome(outcome)) {
+        if (workspaceId === null) {
+          await client.query("ROLLBACK");
+          return envelopeRejected(outcome.rejected);
+        }
+        await insertPendingRow();
+        const stored = await persistFinal(client, invocationId, envelopeRejected(outcome.rejected));
+        await client.query("COMMIT");
+        return stored;
+      }
       if (workspaceId === null) {
         throw new Error(`${invocation.name} completed without a workspace id`);
       }

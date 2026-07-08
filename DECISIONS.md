@@ -142,6 +142,75 @@ scope for every session until resolved.
 - Architecture impact: amends the §3 audit_events row (actor_type enum gains
   'platform'); amendment applied to ARCHITECTURE.md by the operator
 
+### DEC-008 — 2026-07-08 — SLICE-006 person action scope, input contract, and erasure recipe
+- Status: RESOLVED
+- Raised by: SLICE-006 implementation stop (Codex CHANGE-REQUEST)
+- Question: SLICE-006 asks for `person.create`, `person.update`,
+  `person.deactivate`, and `person.pseudonymize`, but PROGRESS.md still has a
+  Bootstrap ambiguities note marked "confirm" for whether Phase 0 includes the
+  full catalog set for person actions, including `person.pseudonymize`.
+  Additionally, §5 names `person.create / person.update` input as
+  "role_class, name, contact" without fixing how `person.update` identifies
+  the target person, whether update fields are full-replacement or partial, how
+  `contact` maps to §3's `email?` / `phone?` columns, whether locale is part of
+  the action input, and what exact PII replacement/nulling recipe plus GDPR
+  basis audit payload `person.pseudonymize` must use.
+- Resolution:
+  1. Scope confirmed: Phase 0 / SLICE-006 implements all four person actions
+     (create, update, deactivate, pseudonymize). This resolves the person
+     portion of the Bootstrap ambiguity only; the site.activate/archive
+     portion remains open for SLICE-007.
+  2. §5 input "contact" is shorthand. Public inputs are flat fields mapping
+     1:1 to §3 columns; no nested contact object.
+  3. person.create input: display_name (1–200, required), role_class
+     (enum, required), email? (trimmed, max 254), phone? (trimmed, max 50,
+     no E.164 normalization in v1), locale? (must be a supported catalog
+     locale, de|en; defaults to workspace default). status is not an input
+     (always active). Creating an owner/manager without email succeeds with
+     warning code no_email_for_invitable_role.
+  4. person.update is PARTIAL (patch semantics): input person_id (required)
+     plus any of display_name, role_class, email, phone, locale. Absent =
+     unchanged; explicit null clears email/phone only (display_name,
+     role_class, locale are non-nullable). Empty patch rejected. Not
+     updatable via this action: status, auth_user_id, pin_hash. Target must
+     not be pseudonymized. Rationale: minimal audit diffs, offline-safe
+     (no read-modify-write clobber), legible agent proposals.
+  5. Role authority: only an owner actor may create a person with
+     role_class=owner, change role_class to/from owner, or update /
+     deactivate / pseudonymize a person whose role_class=owner. Otherwise
+     actors O, M per catalog; pseudonymize remains O only.
+  6. Last-owner guard: reject deactivate, pseudonymize, and role_class
+     demotion when the target is the workspace's sole active owner
+     (error: last_owner_protected).
+  7. person.deactivate: input person_id, reason (1–2000). Transition
+     active → inactive only. reason in audit extras. No person.reactivate
+     exists in the catalog; none is added here (separate DEC if needed).
+  8. person.pseudonymize recipe (single kernel transaction, terminal state,
+     allowed from active or inactive):
+     - display_name → 'Person ' + last 6 hex of person id (deterministic,
+       non-identifying, keeps lists/exports readable)
+     - email, phone, pin_hash, auth_user_id → NULL
+     - locale → workspace default
+     - status → 'pseudonymized'
+     - all non-revoked auth_devices of the person → revoked, audited under
+       the same invocation (kernel-internal cascade, not the device.revoke
+       public action)
+     Input: person_id, legal_basis { kind enum(data_subject_request,
+     retention_policy, other), note (1–2000, required) }, stored verbatim
+     in audit extras together with cleared_fields.
+  9. Audit-redaction exception: the pseudonymize audit event MUST NOT
+     contain pre-erasure PII values. Its before-diff records field names
+     only (cleared_fields); values are never written. Prior audit_events
+     remain untouched (insert-only wins); their eventual fate is governed
+     by §16 retention windows, justified by the stored legal basis.
+  10. Idempotency: client UUID for all four actions (per catalog); replay
+      returns the byte-identical envelope (F24/F30).
+  Approved by: Vitali Voinski (operator), 2026-07-08; transcribed by Codex.
+- Architecture impact: §5 person rows amended to the exact inputs above;
+  §16 erasure paragraph gains the recipe and the audit-redaction exception
+  (rule 9); Bootstrap ambiguities note updated (person portion resolved).
+  Doc changes via doc-PR by the operator.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
@@ -169,3 +238,4 @@ scope for every session until resolved.
 - 2026-07-06 SLICE-004: RLS-suite fixtures are inserted with direct SQL as the migration owner (SQL-test scaffolding precedent from SLICE-002's immutability suite; the §5 actions for these entities ship SLICE-005+); isolation is proved two ways — raw SET LOCAL ROLE app_kernel transactions per table, and a deliberately workspace-filter-free test action dispatched through the real kernel for the §7 bypass case.
 - 2026-07-07 SLICE-005: workspace.create generates the UUIDv7 workspace id server-side, uses that canonical id text as the initial slug, writes only architecture-defined default settings (`tz`, `default_locale`, empty `branding`, empty `action_policies`, `retention_months`), and returns only `{workspace_id}`.
 - 2026-07-07 SLICE-005: the Drizzle parity gate uses public Drizzle table metadata from the checked-in `core/db/schema.ts` mirror and compares table/column/type/nullability against `information_schema.columns` for all 22 §3 tables.
+- 2026-07-07 SLICE-006: person.* ok envelopes return only `{person_id}`, matching SLICE-005's id-only result pattern; action-level guard rejections persist `status='rejected'` invocation envelopes without audit events or mutations.

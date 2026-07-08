@@ -119,6 +119,16 @@ async function workspaceById(workspaceId: string): Promise<{
   return res.rows[0] ?? null;
 }
 
+async function adminInsertPerson(status: "active" | "inactive" | "pseudonymized" = "active"): Promise<string> {
+  const personId = randomUUID();
+  await admin.query(
+    `INSERT INTO persons (id, workspace_id, display_name, role_class, locale, status)
+     VALUES ($1, $2, 'Property Person', 'worker', 'de', $3)`,
+    [personId, workspaceId, status],
+  );
+  return personId;
+}
+
 registry.register({
   name: "test.client_create",
   actors: { minHumanRole: "manager", system: true },
@@ -680,6 +690,29 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     "workspace.create": {
       actor: platform,
       input: () => ({ name: `Property ${randomUUID()}`, plan_code: "pilot" }),
+      expected: "ok",
+    },
+    "person.create": {
+      actor: manager,
+      input: () => ({ display_name: `Property ${randomUUID()}`, role_class: "worker" }),
+      expected: "ok",
+    },
+    "person.update": {
+      actor: manager,
+      input: async () => ({ person_id: await adminInsertPerson(), display_name: "Property Updated" }),
+      expected: "ok",
+    },
+    "person.deactivate": {
+      actor: manager,
+      input: async () => ({ person_id: await adminInsertPerson(), reason: "Property test" }),
+      expected: "ok",
+    },
+    "person.pseudonymize": {
+      actor: owner,
+      input: async () => ({
+        person_id: await adminInsertPerson(),
+        legal_basis: { kind: "other", note: "Property test" },
+      }),
       expected: "ok",
     },
   };

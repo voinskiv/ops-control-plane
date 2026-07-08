@@ -16,6 +16,7 @@ const REJECTION_HTTP_STATUS: Record<string, number> = {
   unauthenticated: 401,
   unauthorized: 403,
   idempotency_conflict: 409,
+  last_owner_protected: 409,
 };
 
 function httpStatusFor(envelope: ResponseEnvelope): number {
