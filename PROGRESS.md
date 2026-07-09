@@ -46,10 +46,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-005
       Status: merged 2026-07-08 (PR #7), Done-when green in CI.
 
-- [ ] SLICE-007: client + site actions (create / update / archive; site activate / archive)
+- [x] SLICE-007: client + site actions (create / update / archive; site activate / archive)
       Architecture ref: §5 catalog, §3 (clients, sites), §9 (active-site meter legibility)
       Done when: client.* and site.* actions execute with catalog thresholds; site.activate/archive are human_only and write meter-delta audit extras; sites.settings.supervisor_person_ids persists (F12); tests green
       Depends on: SLICE-005
+      Status: merged 2026-07-08 (PR #10), Done-when green in CI.
 
 - [ ] SLICE-008: Manager auth — magic link, session, login + authenticated shell
       Architecture ref: §16 (auth), F11, §19 Phase 0 (UI scope)
