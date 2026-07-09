@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   activeOwnerCount,
   createPersonRow,
+  linkAuthUserToPerson,
   lockWorkspaceForOwnerGuard,
   personById,
   PSEUDONYMIZE_CLEARED_FIELDS,
@@ -16,6 +17,7 @@ import {
   type RoleClass,
 } from "../db/persons";
 import { uuidv7 } from "../domain/ids";
+import { getAuthTransport } from "../auth/transport";
 import { outcomeRejected, type ActionDefinition, type Actor, type AuditDraft, type ExecContext } from "./types";
 
 const roleClassInput = z.enum(["owner", "manager", "supervisor", "worker"]);
@@ -73,6 +75,20 @@ const personPseudonymizeInput = z
   .object({
     person_id: z.uuid(),
     legal_basis: legalBasisInput,
+  })
+  .strict();
+
+const personInviteInput = z
+  .object({
+    person_id: z.uuid(),
+  })
+  .strict();
+
+const personLinkAuthInput = z
+  .object({
+    person_id: z.uuid(),
+    auth_user_id: z.uuid(),
+    email: emailInput,
   })
   .strict();
 
@@ -346,6 +362,75 @@ export const personPseudonymizeAction: ActionDefinition<z.infer<typeof personPse
     return {
       result: { person_id: updated.id },
       audit,
+    };
+  },
+};
+
+export const personInviteAction: ActionDefinition<z.infer<typeof personInviteInput>> = {
+  name: "person.invite",
+  actors: { minHumanRole: "manager" },
+  threshold: "human_only",
+  input: personInviteInput,
+  async execute(ctx, input) {
+    const target = await personById(ctx.tx, workspaceId(ctx), input.person_id);
+    if (
+      target === null ||
+      target.status !== "active" ||
+      (target.role_class !== "owner" && target.role_class !== "manager") ||
+      !hasEmail(target.email)
+    ) {
+      return outcomeRejected("invite_ineligible");
+    }
+    if (target.auth_user_id !== null) {
+      return outcomeRejected("auth_already_linked");
+    }
+
+    const invite = await getAuthTransport().sendInvite({
+      email: target.email ?? "",
+      workspaceId: target.workspace_id,
+      personId: target.id,
+    });
+
+    return {
+      result: { person_id: target.id },
+      audit: [
+        {
+          entityType: "persons",
+          entityId: target.id,
+          after: { auth_user_id: target.auth_user_id },
+          extras: { auth_invite_id: invite.inviteId },
+        },
+      ],
+    };
+  },
+};
+
+export const personLinkAuthOperation: ActionDefinition<z.infer<typeof personLinkAuthInput>> = {
+  name: "person.link_auth",
+  actors: { system: true },
+  threshold: "human_only",
+  input: personLinkAuthInput,
+  async execute(ctx, input) {
+    const linked = await linkAuthUserToPerson(ctx.tx, {
+      workspaceId: workspaceId(ctx),
+      personId: input.person_id,
+      authUserId: input.auth_user_id,
+      email: input.email,
+    });
+    if ("rejected" in linked) {
+      return outcomeRejected(linked.rejected);
+    }
+
+    return {
+      result: { person_id: linked.person.id },
+      audit: [
+        {
+          entityType: "persons",
+          entityId: linked.person.id,
+          before: { auth_user_id: null },
+          after: { auth_user_id: linked.person.auth_user_id },
+        },
+      ],
     };
   },
 };

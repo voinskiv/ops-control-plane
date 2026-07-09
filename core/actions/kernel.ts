@@ -11,7 +11,7 @@ import { authorize } from "./authorize";
 import type { EntitlementResolver } from "./entitlement";
 import { inputHash } from "./hash";
 import { findReplay, insertPending, newInvocationId, persistFinal } from "./idempotency";
-import type { ActionRegistry } from "./registry";
+import { ActionRegistry } from "./registry";
 import { thresholdGate } from "./threshold";
 import {
   envelopeError,
@@ -39,13 +39,19 @@ export class Kernel {
     private readonly db: KernelDb,
     private readonly registry: ActionRegistry,
     private readonly entitlements: EntitlementResolver,
+    private readonly internalRegistry: ActionRegistry = new ActionRegistry(),
   ) {}
 
   async dispatch(actor: Actor, invocation: Invocation): Promise<ResponseEnvelope> {
-    return this.db.withClient((client) => this.run(client, actor, invocation, 0));
+    return this.db.withClient((client) => this.run(this.registry, client, actor, invocation, 0));
+  }
+
+  async dispatchInternal(actor: Actor, invocation: Invocation): Promise<ResponseEnvelope> {
+    return this.db.withClient((client) => this.run(this.internalRegistry, client, actor, invocation, 0));
   }
 
   private async run(
+    registry: ActionRegistry,
     client: Queryable,
     actor: Actor,
     invocation: Invocation,
@@ -77,7 +83,7 @@ export class Kernel {
         return prior.result;
       }
 
-      const definition = this.registry.get(invocation.name);
+      const definition = registry.get(invocation.name);
       if (definition === undefined) {
         return await this.finishRejected(client, actor, workspaceId, invocation, hash, "unknown_action");
       }
@@ -188,7 +194,7 @@ export class Kernel {
         // same key + different hash → typed idempotency_conflict; fresh key →
         // a genuine domain conflict that re-executes once and lands in the
         // error path below.
-        return this.run(client, actor, invocation, 1);
+        return this.run(registry, client, actor, invocation, 1);
       }
       return this.persistError(client, actor, workspaceId, invocation, hash);
     }

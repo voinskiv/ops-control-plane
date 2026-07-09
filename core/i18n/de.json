@@ -2,12 +2,31 @@
   "app": {
     "title": "Ops Control Plane"
   },
+  "auth": {
+    "login": {
+      "title": "Anmelden",
+      "email": "E-Mail",
+      "submit": "Magic Link senden",
+      "sent": "Magic Link gesendet."
+    },
+    "shell": {
+      "workspace": "Workspace: {workspace}"
+    },
+    "role": {
+      "owner": "Owner",
+      "manager": "Manager"
+    }
+  },
   "errors": {
     "action": {
       "unknown_action": "Unbekannte Aktion.",
       "unauthenticated": "Nicht angemeldet.",
       "unauthorized": "Keine Berechtigung für diese Aktion.",
       "validation_failed": "Ungültige Eingabe.",
+      "invite_ineligible": "Diese Person kann keine Dashboard-Einladung erhalten.",
+      "auth_already_linked": "Diese Person ist bereits mit einer Anmeldeidentität verknüpft.",
+      "auth_email_mismatch": "Diese Einladung passt nicht zur angemeldeten E-Mail-Adresse.",
+      "no_dashboard_membership": "Keine berechtigte Dashboard-Mitgliedschaft gefunden.",
       "idempotency_conflict": "Dieser Idempotenzschlüssel wurde bereits mit anderer Eingabe verwendet.",
       "entitlement_denied": "Im aktuellen Plan nicht enthalten.",
       "proposal_gating_unavailable": "Agenten-Vorschläge sind noch nicht verfügbar.",

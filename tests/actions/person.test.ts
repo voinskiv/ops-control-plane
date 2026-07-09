@@ -483,10 +483,15 @@ describe("person.pseudonymize (SLICE-006)", () => {
 });
 
 describe("person action authorization and tenancy guards (SLICE-006)", () => {
-  it("rejects supervisor and worker actors on all four actions", async () => {
+  it("rejects supervisor and worker actors on all person actions", async () => {
     const updateTargetId = await insertPerson({ displayName: "Auth Update", roleClass: "worker" });
     const deactivateTargetId = await insertPerson({ displayName: "Auth Deactivate", roleClass: "worker" });
     const pseudonymizeTargetId = await insertPerson({ displayName: "Auth Pseudo", roleClass: "worker" });
+    const inviteTargetId = await insertPerson({
+      displayName: "Auth Invite",
+      roleClass: "manager",
+      email: "auth-invite@example.test",
+    });
     const cases = [
       { name: "person.create", input: { display_name: "No", role_class: "worker" } },
       { name: "person.update", input: { person_id: updateTargetId, display_name: "No" } },
@@ -495,6 +500,7 @@ describe("person action authorization and tenancy guards (SLICE-006)", () => {
         name: "person.pseudonymize",
         input: { person_id: pseudonymizeTargetId, legal_basis: { kind: "other", note: "No" } },
       },
+      { name: "person.invite", input: { person_id: inviteTargetId } },
     ];
 
     for (const actor of [supervisor, workerActor]) {

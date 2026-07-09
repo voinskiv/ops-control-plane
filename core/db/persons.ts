@@ -1,6 +1,6 @@
 // SLICE-006 person persistence. Domain CRUD stays behind core/db and uses the
 // Drizzle mirror introduced for action slices.
-import { and, asc, count, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
 
 import type { Queryable } from "./client";
 import { drizzleFor } from "./drizzle";
@@ -48,6 +48,19 @@ export interface PersonPatch {
 export interface RevokedDeviceAudit {
   id: string;
   beforeStatus: "pending" | "active";
+}
+
+export interface DashboardMembership {
+  person_id: string;
+  workspace_id: string;
+  workspace_display_name: string;
+  role_class: Extract<RoleClass, "owner" | "manager">;
+  locale: SupportedLocale;
+}
+
+export interface PublicDashboardMembership {
+  workspace_id: string;
+  workspace_display_name: string;
 }
 
 export const PSEUDONYMIZE_CLEARED_FIELDS = [
@@ -164,6 +177,59 @@ export async function personById(
   return row === undefined ? null : toPersonSnapshot(row);
 }
 
+export async function dashboardMembershipsByAuthUserId(
+  tx: Queryable,
+  authUserId: string,
+): Promise<PublicDashboardMembership[]> {
+  const res = await tx.query<PublicDashboardMembership>(
+    "SELECT workspace_id, workspace_display_name FROM app_dashboard_memberships_for_auth_user($1)",
+    [authUserId],
+  );
+  return res.rows.map((row) => ({
+    workspace_id: row.workspace_id,
+    workspace_display_name: row.workspace_display_name,
+  }));
+}
+
+export async function dashboardMembershipByWorkspace(
+  tx: Queryable,
+  authUserId: string,
+  workspaceId: string,
+): Promise<DashboardMembership | null> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .select({
+      personId: persons.id,
+      workspaceId: persons.workspaceId,
+      workspaceDisplayName: workspaces.name,
+      roleClass: persons.roleClass,
+      locale: persons.locale,
+    })
+    .from(persons)
+    .innerJoin(workspaces, eq(workspaces.id, persons.workspaceId))
+    .where(
+      and(
+        eq(persons.authUserId, authUserId),
+        eq(persons.workspaceId, workspaceId),
+        eq(persons.status, "active"),
+        inArray(persons.roleClass, ["owner", "manager"]),
+        eq(workspaces.status, "active"),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    return null;
+  }
+  return {
+    person_id: row.personId,
+    workspace_id: row.workspaceId,
+    workspace_display_name: row.workspaceDisplayName,
+    role_class: row.roleClass === "owner" ? "owner" : "manager",
+    locale: supportedLocale(row.locale),
+  };
+}
+
 export async function activeOwnerCount(tx: Queryable, workspaceId: string): Promise<number> {
   const db = drizzleFor(tx);
   const rows = await db
@@ -197,6 +263,63 @@ export async function updatePersonRow(
     throw new Error(`person ${personId} disappeared during update`);
   }
   return toPersonSnapshot(row);
+}
+
+type LinkAuthRejected = "validation_failed" | "auth_already_linked" | "auth_email_mismatch" | "invite_ineligible";
+
+async function hasPersonInvite(tx: Queryable, workspaceId: string, personId: string): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1
+     FROM audit_events
+     WHERE workspace_id = $1
+       AND action = 'person.invite'
+       AND entity_type = 'persons'
+       AND entity_id = $2
+       AND extras ? 'auth_invite_id'
+     LIMIT 1`,
+    [workspaceId, personId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function preflightLinkAuthUserToPerson(
+  tx: Queryable,
+  params: {
+    workspaceId: string;
+    personId: string;
+    email: string;
+  },
+): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
+  const before = await personById(tx, params.workspaceId, params.personId);
+  if (before === null || before.status !== "active" || (before.role_class !== "owner" && before.role_class !== "manager")) {
+    return { rejected: "validation_failed" };
+  }
+  if (before.email === null || before.email !== params.email) {
+    return { rejected: "auth_email_mismatch" };
+  }
+  if (before.auth_user_id !== null) {
+    return { rejected: "auth_already_linked" };
+  }
+  if (!(await hasPersonInvite(tx, params.workspaceId, params.personId))) {
+    return { rejected: "invite_ineligible" };
+  }
+  return { ok: true };
+}
+
+export async function linkAuthUserToPerson(
+  tx: Queryable,
+  params: {
+    workspaceId: string;
+    personId: string;
+    authUserId: string;
+    email: string;
+  },
+): Promise<{ person: PersonSnapshot } | { rejected: LinkAuthRejected }> {
+  const preflight = await preflightLinkAuthUserToPerson(tx, params);
+  if ("rejected" in preflight) {
+    return preflight;
+  }
+  return { person: await updatePersonRow(tx, params.workspaceId, params.personId, { authUserId: params.authUserId }) };
 }
 
 export async function revokeNonRevokedAuthDevices(

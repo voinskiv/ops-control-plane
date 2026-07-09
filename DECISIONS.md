@@ -503,6 +503,62 @@ scope for every session until resolved.
 
 ---
 
+### DEC-011 — 2026-07-08 — RLS-safe dashboard membership listing before workspace selection
+- Status: RESOLVED
+- Raised by: SLICE-008 PR #13 rejection fix (F1/F3). No implementation code
+  written for the answer-dependent fix.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: How may the auth/session establishment route list all
+    qualifying dashboard memberships for a Supabase Auth identity before a
+    workspace is selected, while keeping request-path database traffic on the
+    `app_kernel` role subject to RLS?
+  - Architecture section(s) involved: §7 access-path ruling / RLS GUC
+    contract; §16 auth paragraph as amended by DEC-010; DEC-010 Resolution 2
+    and Resolution 4.
+  - Options considered: (A) Add an RLS-safe database lookup path for
+    auth-session membership discovery, for example a narrowly scoped
+    policy/function that returns only `{workspace_id, workspace_display_name}`
+    for rows whose `persons.auth_user_id` equals the verified Supabase
+    identity. A reviewer picks this to keep the membership source relational
+    and immediately revocable while making the pre-selection lookup possible
+    under RLS. (B) Store non-authoritative candidate workspace ids in Supabase
+    Auth app metadata at invite/link time, then validate each candidate under
+    `app_kernel` with `app.workspace_id` set before returning only qualifying
+    memberships. A reviewer picks this to avoid a Postgres schema/policy
+    change, accepting a new external stored-data format and stale candidates
+    that must never become authority. (C) Change session establishment to
+    require a client-supplied `workspace_id` and remove pre-selection
+    membership listing until another read path exists. A reviewer picks this
+    to keep the current RLS model unchanged, accepting that F11
+    multi-workspace identities cannot discover or choose among memberships
+    from login alone. (D) Keep the current owner-role auth pool for membership
+    listing. A reviewer would only pick this for implementation speed, but it
+    contradicts §7 and the PR rejection because RLS is enabled but not forced,
+    so the table owner bypasses the backstop.
+  - Smallest-safe default (if allowed to proceed): none — hard blocked.
+    Option D is disallowed; C changes product behavior; A is a schema/RLS
+    design; B adds a security-relevant external stored-data format.
+  - Why this needs human sign-off: TENANCY and SECURITY/AUTHZ. The concrete
+    harm of the wrong default is either cross-tenant membership disclosure via
+    an owner-role bypass, login lockout for legitimate F11 multi-workspace
+    identities, or treating stale/forged identity metadata as an authorization
+    source.
+- Resolution: Option 1 — RLS-safe SECURITY DEFINER lookup mirroring SLICE-003's
+  app_platform_invocation_lookup: a STABLE SECURITY DEFINER fn (empty search_path,
+  schema-qualified, EXECUTE to app_kernel only) returning ONLY {workspace_id,
+  workspace_display_name} for a given auth_user_id, filtered to status='active',
+  role_class in {owner,manager}, active workspaces. core/db/auth.ts moves onto app_kernel
+  under RLS; per-request revalidation sets app.workspace_id and uses the normal tenant
+  policy for the selected workspace; the pre-selection listing uses this fn. Per-workspace
+  RLS policies untouched; no external metadata as authority. Resolves F1 and F3; authorizes
+  one migration (the fn only). Proposed by the judge (Claude Opus 4.8), approved without edit
+  by Vitali Voinski, 2026-07-08; transcribed by the implementing agent.
+- Architecture impact: amends §7/§16 and DEC-010's membership-listing
+  implementation contract with an RLS-safe pre-selection lookup function.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
 - 2026-07-05 SLICE-001: test runner = Vitest; the de.json completeness check is a Vitest test (tests/i18n.test.ts) so it wires into CI without a stray top-level scripts/ dir (§21.1).
@@ -525,6 +581,7 @@ scope for every session until resolved.
 - 2026-07-06 SLICE-003 (operator-confirmed, structural): data-access split for all future slices — the kernel's bookkeeping (invocation insert/update/select, audit insert, GUC set_config, the DEC-005 lookup call: six fixed statements inside the soon-frozen pipeline modules) stays raw SQL permanently; domain CRUD adopts Drizzle starting SLICE-005, which adds a core/db/schema.ts mirror of all 22 §3 tables plus a **required CI gate** asserting Drizzle-schema ↔ information_schema parity, so drift between db/migrations and the mirror fails the build. §19's map comment ("drizzle schema, client, GUC helper") names the library in the one place the architecture mentions an ORM; this note fixes how it applies. Confirmed by Vitali Voinski (operator), 2026-07-06.
 - 2026-07-06 SLICE-003: HTTP mapping for the §5 envelope — ok 200, error 500, rejected 401 (unauthenticated) / 403 (unauthorized) / 409 (idempotency_conflict) / 400 otherwise; POST /api/actions resolves no actor until SLICE-008/009 attach session/device auth, so it returns the typed unauthenticated rejection without reaching the kernel.
 - 2026-07-06 SLICE-004: the §20.4 Storage-path check = unit tests over a new pure module core/db/storage-path.ts (build/parse/authorize for §7's [FIXED] `ws/{workspace_id}/…` prefix, fail-closed parsing: canonical lowercase uuid, no empty/dot/dotdot segments) — no Storage I/O exists in Phase 0 and the CI database harness has no Storage service, so the prefix mechanism itself is the testable tenancy boundary; later Storage writers (proof.attach, report.generate, doc.upload) must build and authorize paths only through this module.
+- 2026-07-08 SLICE-008: auth route names and cookie names are implementation wiring (`/api/auth/{magic-link,session,workspace,accept}`, `ocp_auth_token`, `ocp_workspace_id`); the pre-workspace membership lookup is confined to `core/auth` and returns only DEC-010's qualifying workspace id + display name.
 - 2026-07-06 SLICE-004: RLS-suite fixtures are inserted with direct SQL as the migration owner (SQL-test scaffolding precedent from SLICE-002's immutability suite; the §5 actions for these entities ship SLICE-005+); isolation is proved two ways — raw SET LOCAL ROLE app_kernel transactions per table, and a deliberately workspace-filter-free test action dispatched through the real kernel for the §7 bypass case.
 - 2026-07-07 SLICE-005: workspace.create generates the UUIDv7 workspace id server-side, uses that canonical id text as the initial slug, writes only architecture-defined default settings (`tz`, `default_locale`, empty `branding`, empty `action_policies`, `retention_months`), and returns only `{workspace_id}`.
 - 2026-07-07 SLICE-005: the Drizzle parity gate uses public Drizzle table metadata from the checked-in `core/db/schema.ts` mirror and compares table/column/type/nullability against `information_schema.columns` for all 22 §3 tables.
