@@ -233,8 +233,12 @@ export class DashboardAuth {
     if (identity === null) {
       return { actor: null, cookies: [clearAuthCookie(), clearWorkspaceCookie()] };
     }
-    const membership = await this.authDb.withWorkspace(cookies.workspaceId, (client) =>
-      dashboardMembershipByWorkspace(client, identity.id, cookies.workspaceId ?? ""),
+    const workspaceId = workspaceIdInput.safeParse(cookies.workspaceId);
+    if (!workspaceId.success) {
+      return { actor: null, cookies: [clearWorkspaceCookie()] };
+    }
+    const membership = await this.authDb.withWorkspace(workspaceId.data, (client) =>
+      dashboardMembershipByWorkspace(client, identity.id, workspaceId.data),
     );
     if (membership === null) {
       return { actor: null, cookies: [clearWorkspaceCookie()] };
