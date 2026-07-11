@@ -8,6 +8,7 @@
 // in tests/actions/kernel.test.ts, no new RejectionCode or catalog string).
 import { z } from "zod";
 
+import { activeClientLocked } from "../db/clients";
 import {
   activeSiteCount,
   createSiteRow,
@@ -72,17 +73,6 @@ function workspaceId(ctx: ExecContext): string {
   return ctx.workspaceId;
 }
 
-async function activeClientLocked(ctx: ExecContext, clientId: string): Promise<boolean> {
-  const res = await ctx.tx.query<{ status: "active" | "archived" }>(
-    `SELECT status
-     FROM clients
-     WHERE workspace_id = $1 AND id = $2
-     FOR UPDATE`,
-    [workspaceId(ctx), clientId],
-  );
-  return res.rows[0]?.status === "active";
-}
-
 // DEC-009 Q3: supervisor_person_ids is the §8/F12 authz source for
 // supervisor site scope — every entry must be an existing, active,
 // in-workspace person with role_class='supervisor'.
@@ -102,7 +92,7 @@ export const siteCreateAction: ActionDefinition<z.infer<typeof siteCreateInput>>
     // Smallest-safe reference validation, mirroring person.update's
     // exclusion of pseudonymized targets: the client must exist and be
     // active in this workspace.
-    if (!(await activeClientLocked(ctx, input.client_id))) {
+    if (!(await activeClientLocked(ctx.tx, workspaceId(ctx), input.client_id))) {
       return outcomeRejected("validation_failed");
     }
     if (!(await supervisorIdsValid(ctx, input.supervisor_person_ids))) {
@@ -183,7 +173,7 @@ export const siteActivateAction: ActionDefinition<z.infer<typeof siteActivateInp
     if (target === null || target.status !== "draft") {
       return outcomeRejected("validation_failed");
     }
-    if (!(await activeClientLocked(ctx, target.client_id))) {
+    if (!(await activeClientLocked(ctx.tx, workspaceId(ctx), target.client_id))) {
       return outcomeRejected("validation_failed");
     }
 

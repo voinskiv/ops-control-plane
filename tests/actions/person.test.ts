@@ -408,6 +408,41 @@ describe("person.deactivate (SLICE-006)", () => {
       result: { code: "validation_failed" },
     });
   });
+
+  it("does not let the final update set inactive after the target becomes pseudonymized", async () => {
+    const targetId = await insertPerson({
+      displayName: "Stale Deactivate Target",
+      roleClass: "worker",
+      authUserId: randomUUID(),
+      email: "deactivate-before@example.test",
+      phone: "111",
+      pinHash: "stale-pin-hash",
+      locale: "en",
+    });
+    const staleRead = await personRow(targetId);
+    expect(staleRead).toMatchObject({ status: "active", email: "deactivate-before@example.test" });
+
+    await expect(
+      dispatch(owner, "person.pseudonymize", {
+        person_id: targetId,
+        legal_basis: { kind: "data_subject_request", note: "Concurrent erasure before deactivate commit" },
+      }),
+    ).resolves.toMatchObject({ status: "ok", result: { person_id: targetId } });
+
+    await expect(
+      updateNonPseudonymizedPersonRow(admin, workspaceId, targetId, {
+        status: "inactive",
+      }),
+    ).resolves.toBeNull();
+
+    expect(await personRow(targetId)).toMatchObject({
+      status: "pseudonymized",
+      email: null,
+      phone: null,
+      auth_user_id: null,
+      pin_hash: null,
+    });
+  });
 });
 
 describe("person.pseudonymize (SLICE-006)", () => {

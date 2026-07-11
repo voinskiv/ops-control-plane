@@ -104,6 +104,25 @@ export async function clientById(tx: Queryable, workspaceId: string, clientId: s
   return row === undefined ? null : toClientSnapshot(row);
 }
 
+export async function lockedClientById(
+  tx: Queryable,
+  workspaceId: string,
+  clientId: string,
+): Promise<{ id: string; status: ClientStatus } | null> {
+  const res = await tx.query<{ id: string; status: ClientStatus }>(
+    `SELECT id, status
+     FROM clients
+     WHERE workspace_id = $1 AND id = $2
+     FOR UPDATE`,
+    [workspaceId, clientId],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function activeClientLocked(tx: Queryable, workspaceId: string, clientId: string): Promise<boolean> {
+  return (await lockedClientById(tx, workspaceId, clientId))?.status === "active";
+}
+
 export async function updateClientRow(
   tx: Queryable,
   workspaceId: string,
