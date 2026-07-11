@@ -267,19 +267,85 @@ export async function updatePersonRow(
 
 type LinkAuthRejected = "validation_failed" | "auth_already_linked" | "auth_email_mismatch" | "invite_ineligible";
 
-async function hasPersonInvite(tx: Queryable, workspaceId: string, personId: string): Promise<boolean> {
-  const res = await tx.query(
-    `SELECT 1
+async function latestPersonInviteEmail(tx: Queryable, workspaceId: string, personId: string): Promise<string | null> {
+  const res = await tx.query<{ invited_email: string }>(
+    `SELECT extras ->> 'invited_email' AS invited_email
      FROM audit_events
      WHERE workspace_id = $1
        AND action = 'person.invite'
        AND entity_type = 'persons'
        AND entity_id = $2
        AND extras ? 'auth_invite_id'
+       AND extras ? 'invited_email'
+     ORDER BY created_at DESC, id DESC
      LIMIT 1`,
     [workspaceId, personId],
   );
-  return (res.rowCount ?? 0) > 0;
+  return res.rows[0]?.invited_email ?? null;
+}
+
+async function lockedPersonForLink(
+  tx: Queryable,
+  workspaceId: string,
+  personId: string,
+): Promise<PersonSnapshot | null> {
+  const res = await tx.query<{
+    id: string;
+    workspace_id: string;
+    display_name: string;
+    role_class: RoleClass;
+    auth_user_id: string | null;
+    email: string | null;
+    phone: string | null;
+    locale: string;
+    pin_hash: string | null;
+    status: PersonStatus;
+    created_at: Date | string;
+  }>(
+    `SELECT id, workspace_id, display_name, role_class, auth_user_id, email,
+            phone, locale, pin_hash, status, created_at
+     FROM persons
+     WHERE workspace_id = $1 AND id = $2
+     FOR UPDATE`,
+    [workspaceId, personId],
+  );
+  const row = res.rows[0];
+  if (row === undefined) {
+    return null;
+  }
+  return {
+    ...row,
+    locale: supportedLocale(row.locale),
+    created_at: timestampSnapshot(row.created_at),
+  };
+}
+
+async function validateLinkAuthUserToPerson(
+  tx: Queryable,
+  person: PersonSnapshot | null,
+  params: {
+    workspaceId: string;
+    personId: string;
+    email: string;
+  },
+): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
+  if (person === null || person.status !== "active" || (person.role_class !== "owner" && person.role_class !== "manager")) {
+    return { rejected: "validation_failed" };
+  }
+  if (person.email === null || person.email !== params.email) {
+    return { rejected: "auth_email_mismatch" };
+  }
+  if (person.auth_user_id !== null) {
+    return { rejected: "auth_already_linked" };
+  }
+  const invitedEmail = await latestPersonInviteEmail(tx, params.workspaceId, params.personId);
+  if (invitedEmail === null) {
+    return { rejected: "invite_ineligible" };
+  }
+  if (invitedEmail !== params.email) {
+    return { rejected: "auth_email_mismatch" };
+  }
+  return { ok: true };
 }
 
 export async function preflightLinkAuthUserToPerson(
@@ -291,19 +357,7 @@ export async function preflightLinkAuthUserToPerson(
   },
 ): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
   const before = await personById(tx, params.workspaceId, params.personId);
-  if (before === null || before.status !== "active" || (before.role_class !== "owner" && before.role_class !== "manager")) {
-    return { rejected: "validation_failed" };
-  }
-  if (before.email === null || before.email !== params.email) {
-    return { rejected: "auth_email_mismatch" };
-  }
-  if (before.auth_user_id !== null) {
-    return { rejected: "auth_already_linked" };
-  }
-  if (!(await hasPersonInvite(tx, params.workspaceId, params.personId))) {
-    return { rejected: "invite_ineligible" };
-  }
-  return { ok: true };
+  return validateLinkAuthUserToPerson(tx, before, params);
 }
 
 export async function linkAuthUserToPerson(
@@ -315,9 +369,10 @@ export async function linkAuthUserToPerson(
     email: string;
   },
 ): Promise<{ person: PersonSnapshot } | { rejected: LinkAuthRejected }> {
-  const preflight = await preflightLinkAuthUserToPerson(tx, params);
-  if ("rejected" in preflight) {
-    return preflight;
+  const person = await lockedPersonForLink(tx, params.workspaceId, params.personId);
+  const validation = await validateLinkAuthUserToPerson(tx, person, params);
+  if ("rejected" in validation) {
+    return validation;
   }
   return { person: await updatePersonRow(tx, params.workspaceId, params.personId, { authUserId: params.authUserId }) };
 }

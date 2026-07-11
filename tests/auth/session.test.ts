@@ -55,6 +55,18 @@ async function personAuthUser(personId: string): Promise<string | null> {
   return res.rows[0]?.auth_user_id ?? null;
 }
 
+async function linkInvocationCount(personId: string, authUserId: string): Promise<number> {
+  const res = await admin.query<{ n: string }>(
+    `SELECT count(*) AS n
+     FROM action_invocations
+     WHERE workspace_id = $1
+       AND action_name = 'person.link_auth'
+       AND idempotency_key = $2`,
+    [workspaceA, `person.link:${personId}:${authUserId}`],
+  );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
 async function insertWorkspace(id: string, slug: string, name: string): Promise<void> {
   await admin.query(
     `INSERT INTO workspaces (id, name, slug, plan_code, settings, status)
@@ -192,11 +204,14 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     const invited = await dispatch(ownerA, "person.invite", { person_id: managerAId });
     expect(invited.status).toBe("ok");
     expect(invites).toEqual([{ email: "manager-a@example.test", workspaceId: workspaceA, personId: managerAId }]);
-    const inviteAudit = await admin.query<{ extras: { auth_invite_id?: unknown; invite_sent?: unknown } }>(
+    const inviteAudit = await admin.query<{ extras: { auth_invite_id?: unknown; invited_email?: unknown; invite_sent?: unknown } }>(
       "SELECT extras FROM audit_events WHERE action = 'person.invite' AND entity_id = $1",
       [managerAId],
     );
-    expect(inviteAudit.rows[0]?.extras).toEqual({ auth_invite_id: `invite:${managerAId}` });
+    expect(inviteAudit.rows[0]?.extras).toEqual({
+      auth_invite_id: `invite:${managerAId}`,
+      invited_email: "manager-a@example.test",
+    });
     expect(inviteAudit.rows[0]?.extras.invite_sent).toBeUndefined();
 
     const authUserId = randomUUID();
@@ -360,6 +375,57 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
 
     const accepted = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
     expect(accepted.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
+    expect(await personAuthUser(personId)).toBeNull();
+  });
+
+  it("rejects an identity at a manager-updated email when the invite was sent to another email", async () => {
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Invite Email Binding",
+      roleClass: "manager",
+      email: "invited@example.test",
+    });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    expect(await dispatch(ownerA, "person.update", { person_id: personId, email: "attacker@example.test" })).toMatchObject({
+      status: "ok",
+    });
+
+    const authUserId = randomUUID();
+    const accessToken = tokenFor({ id: authUserId, email: "attacker@example.test" });
+    const accepted = await auth.acceptInvite({ accessToken, workspaceId: workspaceA, personId });
+
+    expect(accepted.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
+    expect(await personAuthUser(personId)).toBeNull();
+    expect(await linkInvocationCount(personId, authUserId)).toBe(0);
+  });
+
+  it("rechecks the invited email inside the person.link_auth kernel transaction", async () => {
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Kernel Invite Binding",
+      roleClass: "manager",
+      email: "invited-in-kernel@example.test",
+    });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    expect(
+      await dispatch(ownerA, "person.update", { person_id: personId, email: "attacker-in-kernel@example.test" }),
+    ).toMatchObject({ status: "ok" });
+
+    const authUserId = randomUUID();
+    const linked = await kernel.dispatchInternal(
+      { type: "system", workspaceId: workspaceA },
+      {
+        name: "person.link_auth",
+        input: { person_id: personId, auth_user_id: authUserId, email: "attacker-in-kernel@example.test" },
+        idempotencyKey: `person.link:${personId}:${authUserId}`,
+      },
+    );
+
+    expect(linked).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
     expect(await personAuthUser(personId)).toBeNull();
   });
 

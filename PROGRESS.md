@@ -57,6 +57,7 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Done when: Supabase Auth magic link (SMTP via Resend) resolves to a persons row via auth_user_id with active workspace explicit in session; one auth identity can hold roles in multiple workspaces (F11); login + bare authenticated shell render with catalog strings only
       Depends on: SLICE-006
       Status: draft PR #13 opened 2026-07-08; local typecheck, lint, and tests green.
+      Status: residual R1 invite-linking hardening completed 2026-07-11; accepting identity now binds to the invite-issued email (DEC-012).
 
 - [ ] SLICE-009: Device auth — enroll / claim / revoke, PIN, device.touch
       Architecture ref: §5 catalog (device.*), §16, F17, Appendix B (device.touch)

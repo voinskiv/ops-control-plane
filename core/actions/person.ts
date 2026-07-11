@@ -398,7 +398,7 @@ export const personInviteAction: ActionDefinition<z.infer<typeof personInviteInp
           entityType: "persons",
           entityId: target.id,
           after: { auth_user_id: target.auth_user_id },
-          extras: { auth_invite_id: invite.inviteId },
+          extras: { auth_invite_id: invite.inviteId, invited_email: target.email },
         },
       ],
     };
