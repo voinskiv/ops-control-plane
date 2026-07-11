@@ -290,7 +290,10 @@ export const personDeactivateAction: ActionDefinition<z.infer<typeof personDeact
       return outcomeRejected("last_owner_protected");
     }
 
-    const updated = await updatePersonRow(ctx.tx, workspaceId(ctx), target.id, { status: "inactive" });
+    const updated = await updateNonPseudonymizedPersonRow(ctx.tx, workspaceId(ctx), target.id, { status: "inactive" });
+    if (updated === null) {
+      return outcomeRejected("validation_failed");
+    }
     return {
       result: { person_id: updated.id },
       audit: [

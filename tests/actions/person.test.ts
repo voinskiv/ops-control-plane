@@ -6,7 +6,7 @@ import { noopUnlimitedResolver } from "@core/actions/entitlement";
 import { Kernel } from "@core/actions/kernel";
 import { registry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
-import { connect, type DbClient } from "@core/db/client";
+import { connect, type DbClient, type Queryable, type QueryResult, type QueryResultRow } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
 import { updateNonPseudonymizedPersonRow } from "@core/db/persons";
 
@@ -193,6 +193,78 @@ async function expectRejectedInvocationWithoutAudit(key: string, code: string): 
   expect(invocation?.status).toBe("rejected");
   expect(invocation?.result).toMatchObject({ status: "rejected", result: { code } });
   expect(await auditEventsFor(invocation?.id ?? "")).toEqual([]);
+}
+
+function sqlText(query: unknown): string {
+  if (typeof query === "string") {
+    return query;
+  }
+  if (typeof query === "object" && query !== null && typeof (query as { text?: unknown }).text === "string") {
+    return (query as { text: string }).text;
+  }
+  return "";
+}
+
+function isPersonTargetRead<R extends QueryResultRow>(text: unknown, result: QueryResult<R>, personId: string): boolean {
+  const sql = sqlText(text).toLowerCase();
+  return (
+    sql.startsWith("select ") &&
+    sql.includes(" from \"persons\"") &&
+    !sql.includes(" for update") &&
+    result.rows.some(
+      (row) =>
+        (Array.isArray(row) && row[0] === personId && row[9] === "active") ||
+        (!Array.isArray(row) && row.id === personId && row.status === "active"),
+    )
+  );
+}
+
+async function pseudonymizeFixturePerson(personId: string): Promise<void> {
+  await admin.query(
+    `UPDATE persons
+     SET display_name = $2,
+         email = NULL,
+         phone = NULL,
+         pin_hash = NULL,
+         auth_user_id = NULL,
+         locale = 'de',
+         status = 'pseudonymized'
+     WHERE id = $1`,
+    [personId, `Person ${personId.replaceAll("-", "").slice(-6)}`],
+  );
+}
+
+async function dispatchWithConcurrentPseudonymize(
+  actor: Actor,
+  name: string,
+  input: unknown,
+  idempotencyKey: string,
+  personId: string,
+): Promise<ResponseEnvelope> {
+  const racingDb: KernelDb = {
+    async withClient<T>(fn: (client: Queryable) => Promise<T>): Promise<T> {
+      return kernelDb.withClient((client) => {
+        let injected = false;
+        const wrappedClient: Queryable = {
+          async query<R extends QueryResultRow = QueryResultRow>(
+            text: string,
+            values?: unknown[],
+          ): Promise<QueryResult<R>> {
+            const result = await client.query<R>(text, values);
+            if (!injected && isPersonTargetRead(text, result, personId)) {
+              injected = true;
+              await pseudonymizeFixturePerson(personId);
+            }
+            return result;
+          },
+        };
+        return fn(wrappedClient);
+      });
+    },
+    end: async () => undefined,
+  };
+
+  return new Kernel(racingDb, registry, noopUnlimitedResolver).dispatch(actor, { name, input, idempotencyKey });
 }
 
 beforeAll(async () => {
@@ -406,6 +478,43 @@ describe("person.deactivate (SLICE-006)", () => {
     await expect(dispatch(manager, "person.deactivate", input)).resolves.toMatchObject({
       status: "rejected",
       result: { code: "validation_failed" },
+    });
+  });
+
+  it("returns validation_failed without audit when the final update finds the target pseudonymized", async () => {
+    const targetId = await insertPerson({
+      displayName: "Stale Deactivate Target",
+      roleClass: "worker",
+      authUserId: randomUUID(),
+      email: "deactivate-before@example.test",
+      phone: "111",
+      pinHash: "stale-pin-hash",
+      locale: "en",
+    });
+    const staleRead = await personRow(targetId);
+    expect(staleRead).toMatchObject({ status: "active", email: "deactivate-before@example.test" });
+
+    const key = freshKey();
+    await expect(
+      dispatchWithConcurrentPseudonymize(
+        manager,
+        "person.deactivate",
+        { person_id: targetId, reason: "Lost race to erasure" },
+        key,
+        targetId,
+      ),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      result: { code: "validation_failed" },
+    });
+    await expectRejectedInvocationWithoutAudit(key, "validation_failed");
+
+    expect(await personRow(targetId)).toMatchObject({
+      status: "pseudonymized",
+      email: null,
+      phone: null,
+      auth_user_id: null,
+      pin_hash: null,
     });
   });
 });
