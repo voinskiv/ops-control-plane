@@ -10,6 +10,7 @@ import {
   PSEUDONYMIZE_CLEARED_FIELDS,
   pseudonymizedDisplayName,
   revokeNonRevokedAuthDevices,
+  updateNonPseudonymizedPersonRow,
   updatePersonRow,
   workspaceDefaultLocale,
   type PersonPatch,
@@ -248,7 +249,10 @@ export const personUpdateAction: ActionDefinition<z.infer<typeof personUpdateInp
     }
 
     const { patch, beforeDiff, fields } = updatePatchAndDiff(input, target);
-    const updated = await updatePersonRow(ctx.tx, workspaceId(ctx), target.id, patch);
+    const updated = await updateNonPseudonymizedPersonRow(ctx.tx, workspaceId(ctx), target.id, patch);
+    if (updated === null) {
+      return outcomeRejected("validation_failed");
+    }
     const extras = target.role_class !== updated.role_class ? roleChange(target.role_class, updated.role_class) : undefined;
 
     return {

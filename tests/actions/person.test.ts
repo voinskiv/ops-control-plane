@@ -8,6 +8,7 @@ import { registry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
 import { connect, type DbClient } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
+import { updateNonPseudonymizedPersonRow } from "@core/db/persons";
 
 let admin: DbClient;
 let kernelDb: KernelDb;
@@ -342,6 +343,42 @@ describe("person.update (SLICE-006)", () => {
     await expect(dispatch(manager, "person.update", { person_id: pseudoId, display_name: "Nope" })).resolves.toMatchObject({
       status: "rejected",
       result: { code: "validation_failed" },
+    });
+  });
+
+  it("does not let the final update write contact fields after the target becomes pseudonymized", async () => {
+    const targetId = await insertPerson({
+      displayName: "Stale Update Target",
+      roleClass: "worker",
+      authUserId: randomUUID(),
+      email: "stale-before@example.test",
+      phone: "111",
+      pinHash: "stale-pin-hash",
+      locale: "en",
+    });
+    const staleRead = await personRow(targetId);
+    expect(staleRead).toMatchObject({ status: "active", email: "stale-before@example.test", phone: "111" });
+
+    await expect(
+      dispatch(owner, "person.pseudonymize", {
+        person_id: targetId,
+        legal_basis: { kind: "data_subject_request", note: "Concurrent erasure request" },
+      }),
+    ).resolves.toMatchObject({ status: "ok", result: { person_id: targetId } });
+
+    await expect(
+      updateNonPseudonymizedPersonRow(admin, workspaceId, targetId, {
+        email: "restored@example.test",
+        phone: "999",
+      }),
+    ).resolves.toBeNull();
+
+    expect(await personRow(targetId)).toMatchObject({
+      status: "pseudonymized",
+      email: null,
+      phone: null,
+      auth_user_id: null,
+      pin_hash: null,
     });
   });
 });

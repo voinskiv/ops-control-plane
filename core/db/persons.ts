@@ -265,6 +265,22 @@ export async function updatePersonRow(
   return toPersonSnapshot(row);
 }
 
+export async function updateNonPseudonymizedPersonRow(
+  tx: Queryable,
+  workspaceId: string,
+  personId: string,
+  patch: PersonPatch,
+): Promise<PersonSnapshot | null> {
+  const db = drizzleFor(tx);
+  const rows = await db
+    .update(persons)
+    .set(patch)
+    .where(and(eq(persons.workspaceId, workspaceId), eq(persons.id, personId), ne(persons.status, "pseudonymized")))
+    .returning(personSelection);
+  const row = rows[0];
+  return row === undefined ? null : toPersonSnapshot(row);
+}
+
 type LinkAuthRejected = "validation_failed" | "auth_already_linked" | "auth_email_mismatch" | "invite_ineligible";
 
 async function latestPersonInviteEmail(tx: Queryable, workspaceId: string, personId: string): Promise<string | null> {
