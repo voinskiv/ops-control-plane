@@ -559,6 +559,16 @@ scope for every session until resolved.
 
 ---
 
+### DEC-012 — 2026-07-09 — Invite-linking binds to the invited email
+- Status: RESOLVED
+- Raised by: SLICE-008 / PR #13 residual R1
+- Question: Does DEC-010 R1's "the accepting identity's email still equals persons.email" bind `person.link_auth` to the email at the time `person.invite` was issued, or only to the current `persons.email` at acceptance time?
+- Resolution: Invite-linking binds to the invited email. DEC-010 R1's 'the accepting identity's email still equals persons.email' means the accepting Supabase identity's email must equal the email the person.invite was issued to — not merely the current persons.email at acceptance time. Rationale: otherwise a person.update of the email during the invited-but-unlinked window turns person.update into an access grant (the exact harm §16/DEC-010 R1 rejects).
+- Approved without edit by: Vitali Voinski (operator), 2026-07-09; proposed by the judge (Claude Opus 4.8); transcribed by the implementing agent.
+- Architecture impact: none — resolves DEC-010's invite-acceptance link predicate.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
 - 2026-07-05 SLICE-001: test runner = Vitest; the de.json completeness check is a Vitest test (tests/i18n.test.ts) so it wires into CI without a stray top-level scripts/ dir (§21.1).
@@ -591,3 +601,4 @@ scope for every session until resolved.
 - 2026-07-08 SLICE-007: `client.archive` reuses a new typed rejection `client_has_active_sites` (DEC-009 Q5 guard), same tier as SLICE-006's `last_owner_protected` — a domain-guard code, not a new capability; catalog entries added to de.json/en.json.
 - 2026-07-08 SLICE-007: `site.create` requires `client_id` to reference an existing, active (non-archived) client in the same workspace — smallest-safe reference validation, mirrors `person.update`'s exclusion of pseudonymized targets. `client_id` is not a `site.update` patch field (reassigning a site's client has undefined billing/attribution consequences and is out of DEC-009's scope).
 - 2026-07-08 SLICE-007: `site.archive` is registered per catalog (§21.2 exact-match) but its `execute()` deliberately throws — reuses the kernel's existing generic error path (`status="error"`, `internal_error` catalog string, no mutation, no audit event, replay-stable) already exercised by `test.fail_after_write`; no new RejectionCode was added for the deferral itself, since `RejectionCode` is a closed, catalog-declared, user-visible set (AGENTS.md STOP list) and this reuses what already exists.
+- 2026-07-11 SLICE-008 residual R1: `person.invite` audit extras extend to `{auth_invite_id, invited_email}`; `person.link_auth` binds to the newest such record and fails closed for legacy invite audits without `invited_email`, requiring a re-invite.
