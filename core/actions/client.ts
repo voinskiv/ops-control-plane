@@ -1,7 +1,14 @@
 // SLICE-007: client.* actions per §5 catalog and DEC-009 (Q4, Q5).
 import { z } from "zod";
 
-import { clientById, createClientRow, hasNonArchivedSites, updateClientRow, type ContactInfo } from "../db/clients";
+import {
+  clientById,
+  createClientRow,
+  hasNonArchivedSites,
+  updateClientRow,
+  type ClientStatus,
+  type ContactInfo,
+} from "../db/clients";
 import { uuidv7 } from "../domain/ids";
 import { outcomeRejected, type ActionDefinition, type ExecContext } from "./types";
 
@@ -41,6 +48,17 @@ function workspaceId(ctx: ExecContext): string {
     throw new Error("client action executed without a workspace id");
   }
   return ctx.workspaceId;
+}
+
+async function clientForArchive(ctx: ExecContext, clientId: string): Promise<{ id: string; status: ClientStatus } | null> {
+  const res = await ctx.tx.query<{ id: string; status: ClientStatus }>(
+    `SELECT id, status
+     FROM clients
+     WHERE workspace_id = $1 AND id = $2
+     FOR UPDATE`,
+    [workspaceId(ctx), clientId],
+  );
+  return res.rows[0] ?? null;
 }
 
 export const clientCreateAction: ActionDefinition<z.infer<typeof clientCreateInput>> = {
@@ -107,7 +125,7 @@ export const clientArchiveAction: ActionDefinition<z.infer<typeof clientArchiveI
   threshold: "proposal_gated",
   input: clientArchiveInput,
   async execute(ctx, input) {
-    const target = await clientById(ctx.tx, workspaceId(ctx), input.client_id);
+    const target = await clientForArchive(ctx, input.client_id);
     if (target === null || target.status !== "active") {
       return outcomeRejected("validation_failed");
     }

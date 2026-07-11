@@ -34,6 +34,10 @@ function freshKey(): string {
   return `site:${randomUUID()}`;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function dispatch(actor: Actor, name: string, input: unknown, idempotencyKey = freshKey()): Promise<ResponseEnvelope> {
   return kernel.dispatch(actor, { name, input, idempotencyKey });
 }
@@ -88,6 +92,11 @@ async function activeSiteCount(ws = workspaceId): Promise<number> {
     "SELECT count(*) AS n FROM sites WHERE workspace_id = $1 AND status = 'active'",
     [ws],
   );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
+async function siteCountForClient(clientId: string): Promise<number> {
+  const res = await admin.query<{ n: string }>("SELECT count(*) AS n FROM sites WHERE client_id = $1", [clientId]);
   return Number(res.rows[0]?.n ?? 0);
 }
 
@@ -187,6 +196,30 @@ describe("site.create (SLICE-007, DEC-009 Q1/Q2)", () => {
       });
     }
   });
+
+  it("serializes site.create against an in-flight client archive status update", async () => {
+    const clientId = await insertClient();
+    const locker = await connect(inject("databaseUrl"));
+    await locker.query("BEGIN");
+    try {
+      await locker.query("UPDATE clients SET status = 'archived' WHERE id = $1", [clientId]);
+      let settled = false;
+      const create = dispatch(manager, "site.create", { client_id: clientId, name: "Race Site" }).then((envelope) => {
+        settled = true;
+        return envelope;
+      });
+
+      await delay(100);
+      expect(settled).toBe(false);
+      await locker.query("COMMIT");
+
+      await expect(create).resolves.toMatchObject({ status: "rejected", result: { code: "validation_failed" } });
+      expect(await siteCountForClient(clientId)).toBe(0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => undefined);
+      await locker.end();
+    }
+  });
 });
 
 describe("site.update (SLICE-007)", () => {
@@ -254,6 +287,21 @@ describe("site.activate (SLICE-007, DEC-009 Q1)", () => {
       status: "rejected",
       result: { code: "validation_failed" },
     });
+  });
+
+  it("rejects activating a draft site whose client is archived, without moving the meter", async () => {
+    const clientId = await insertClient("archived");
+    const siteId = await insertSite(clientId, "draft");
+    const before = await activeSiteCount();
+    const key = freshKey();
+
+    await expect(dispatch(manager, "site.activate", { site_id: siteId }, key)).resolves.toMatchObject({
+      status: "rejected",
+      result: { code: "validation_failed" },
+    });
+    expect(await siteRow(siteId)).toMatchObject({ status: "draft" });
+    expect(await activeSiteCount()).toBe(before);
+    expect(await auditEventsFor((await invocationRow(key))?.id ?? "")).toEqual([]);
   });
 
   it("owner may also activate (role inheritance, F6)", async () => {
