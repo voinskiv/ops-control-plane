@@ -58,6 +58,7 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-006
       Status: draft PR #13 opened 2026-07-08; local typecheck, lint, and tests green.
       Status: residual R1 invite-linking hardening completed 2026-07-11; accepting identity now binds to the invite-issued email (DEC-012).
+      Status: merged 2026-07-11 (PR #13 + PR #15 follow-up), Done-when green in CI.
 
 - [ ] SLICE-009: Device auth — enroll / claim / revoke, PIN, device.touch
       Architecture ref: §5 catalog (device.*), §16, F17, Appendix B (device.touch)

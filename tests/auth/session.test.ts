@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 
 import { noopUnlimitedResolver } from "@core/actions/entitlement";
+import { handleActionsPost } from "@core/actions/http";
 import { Kernel } from "@core/actions/kernel";
 import { internalRegistry, registry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
@@ -291,6 +292,45 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     const resolved = await auth.resolveActor(cookieLine(established.cookies));
     expect(resolved.actor).toBeNull();
     expect(resolved.cookies).toEqual([{ name: WORKSPACE_COOKIE, value: "", maxAge: 0 }]);
+  });
+
+  it("clears malformed selected-workspace cookies before any workspace revalidation query", async () => {
+    const url = inject("databaseUrl");
+    const authDb = createAuthDb(url);
+    const authUserId = randomUUID();
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Malformed Cookie Manager",
+      roleClass: "manager",
+      email: "malformed-cookie@example.test",
+      authUserId,
+    });
+    const accessToken = tokenFor({ id: authUserId, email: "malformed-cookie@example.test" });
+    const authWithRlsDb = new DashboardAuth(authDb, () => kernel);
+
+    try {
+      for (const selectedWorkspace of ["not-a-uuid", ""]) {
+        const resolved = await authWithRlsDb.resolveActor(
+          `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(accessToken)}; ${WORKSPACE_COOKIE}=${encodeURIComponent(selectedWorkspace)}`,
+        );
+        expect(resolved.actor).toBeNull();
+        expect(resolved.cookies).toEqual([{ name: WORKSPACE_COOKIE, value: "", maxAge: 0 }]);
+        await expect(
+          handleActionsPost(() => kernel, resolved.actor, {
+            name: "person.update",
+            input: { person_id: personId, display_name: "Should Not Run" },
+            idempotency_key: freshKey(),
+          }),
+        ).resolves.toMatchObject({
+          httpStatus: 401,
+          envelope: { status: "rejected", result: { code: "unauthenticated" } },
+        });
+      }
+    } finally {
+      await authDb.end();
+    }
   });
 
   it("returns one typed rejection for identities with only ineligible role memberships", async () => {
