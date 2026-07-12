@@ -7,7 +7,14 @@ import { handleActionsPost } from "@core/actions/http";
 import { Kernel } from "@core/actions/kernel";
 import { internalRegistry, registry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
-import { DashboardAuth, AUTH_TOKEN_COOKIE, WORKSPACE_COOKIE, type CookieChange } from "@core/auth/session";
+import {
+  DashboardAuth,
+  AUTH_TOKEN_COOKIE,
+  cookieHeader,
+  GOOGLE_INVITE_STATE_COOKIE,
+  WORKSPACE_COOKIE,
+  type CookieChange,
+} from "@core/auth/session";
 import { setAuthTransportForTests, type AuthIdentity, type AuthTransport, type SendInviteParams } from "@core/auth/transport";
 import { createAuthDb, type AuthDb } from "@core/db/auth";
 import { connect, type DbClient } from "@core/db/client";
@@ -41,6 +48,47 @@ function tokenFor(identity: AuthIdentity): string {
   const token = `token:${identity.id}`;
   identities.set(token, identity);
   return token;
+}
+
+function googleIdentity(params: {
+  id: string;
+  email: string;
+  providerEmail: string;
+  emailVerified: boolean;
+  userMetadata?: Record<string, unknown>;
+}): AuthIdentity {
+  return {
+    id: params.id,
+    email: params.email,
+    authenticationMethods: ["oauth"],
+    identities: [
+      {
+        provider: "google",
+        identityData: { email: params.providerEmail, emailVerified: params.emailVerified },
+      },
+    ],
+    ...(params.userMetadata === undefined ? {} : { user_metadata: params.userMetadata }),
+  } as AuthIdentity;
+}
+
+function googleInviteState(workspaceId: string, personId: string): { state: string; cookie: string } {
+  const previousSupabaseUrl = process.env.SUPABASE_URL;
+  process.env.SUPABASE_URL = "https://project.supabase.test";
+  const started = auth.startGoogleInvite("https://app.example.test/api/auth/google/invite", workspaceId, personId);
+  if (previousSupabaseUrl === undefined) {
+    delete process.env.SUPABASE_URL;
+  } else {
+    process.env.SUPABASE_URL = previousSupabaseUrl;
+  }
+  expect(started).not.toBeNull();
+  const redirectTo = new URL(started?.location ?? "").searchParams.get("redirect_to");
+  const state = new URL(redirectTo ?? "").searchParams.get("state");
+  const stateCookie = started?.cookies.find((cookie) => cookie.name === GOOGLE_INVITE_STATE_COOKIE);
+  expect(state).toBeTruthy();
+  expect(stateCookie).toBeDefined();
+  expect(JSON.parse(stateCookie?.value ?? "{}")).toMatchObject({ nonce: state, workspaceId, personId });
+  expect(cookieHeader(stateCookie ?? { name: GOOGLE_INVITE_STATE_COOKIE, value: "" })).toContain("HttpOnly");
+  return { state: state ?? "", cookie: stateCookie?.value ?? "" };
 }
 
 function cookieLine(changes: CookieChange[]): string {
@@ -228,6 +276,33 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     expect(resolved.actor).toEqual({ type: "person", id: managerAId, roleClass: "manager", workspaceId: workspaceA });
   });
 
+  it("invites and links an active supervisor through the unchanged email acceptance path", async () => {
+    const personId = randomUUID();
+    const email = `supervisor-invite-${personId}@example.test`;
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Invited Supervisor",
+      roleClass: "supervisor",
+      email,
+    });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const authUserId = randomUUID();
+    const accepted = await auth.acceptInvite({
+      accessToken: tokenFor({ id: authUserId, email }),
+      workspaceId: workspaceA,
+      personId,
+    });
+    expect(accepted.envelope.status).toBe("ok");
+    expect(await personAuthUser(personId)).toBe(authUserId);
+    expect((await auth.resolveActor(cookieLine(accepted.cookies))).actor).toEqual({
+      type: "person",
+      id: personId,
+      roleClass: "supervisor",
+      workspaceId: workspaceA,
+    });
+  });
+
   it("lists one qualifying identity across two workspaces and switches by re-validating the selected workspace", async () => {
     const authUserId = randomUUID();
     const managerBId = randomUUID();
@@ -333,7 +408,7 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     }
   });
 
-  it("returns one typed rejection for identities with only ineligible role memberships", async () => {
+  it("admits supervisor memberships and rejects worker-only identities", async () => {
     const supervisorAuth = (await admin.query<{ auth_user_id: string | null }>(
       "SELECT auth_user_id FROM persons WHERE id = $1",
       [supervisorId],
@@ -342,14 +417,41 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
       .rows[0]?.auth_user_id;
     expect(supervisorAuth).toBeTruthy();
     expect(workerAuth).toBeTruthy();
-    for (const [authUserId, email] of [
-      [supervisorAuth, "supervisor@example.test"],
-      [workerAuth, "worker@example.test"],
-    ] as const) {
-      const accessToken = tokenFor({ id: authUserId ?? randomUUID(), email });
-      const established = await auth.establish(accessToken);
-      expect(established.envelope).toMatchObject({ status: "rejected", result: { code: "no_dashboard_membership" } });
-    }
+    const supervisorSession = await auth.establish(
+      tokenFor({ id: supervisorAuth ?? randomUUID(), email: "supervisor@example.test" }),
+      workspaceA,
+    );
+    expect(supervisorSession.envelope.status).toBe("ok");
+    expect((await auth.resolveActor(cookieLine(supervisorSession.cookies))).actor).toMatchObject({ roleClass: "supervisor" });
+
+    const workerSession = await auth.establish(tokenFor({ id: workerAuth ?? randomUUID(), email: "worker@example.test" }));
+    expect(workerSession.envelope).toMatchObject({
+      status: "rejected",
+      result: { code: "no_dashboard_membership" },
+    });
+  });
+
+  it("applies a supervisor role change on the next request without cached role authority", async () => {
+    const authUserId = randomUUID();
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "Role Changed Supervisor",
+      roleClass: "supervisor",
+      email: "role-change-supervisor@example.test",
+      authUserId,
+    });
+    const established = await auth.establish(
+      tokenFor({ id: authUserId, email: "role-change-supervisor@example.test" }),
+      workspaceA,
+    );
+    expect((await auth.resolveActor(cookieLine(established.cookies))).actor).toMatchObject({ roleClass: "supervisor" });
+
+    expect(await dispatch(ownerA, "person.update", { person_id: personId, role_class: "worker" })).toMatchObject({
+      status: "ok",
+    });
+    expect((await auth.resolveActor(cookieLine(established.cookies))).actor).toBeNull();
   });
 
   it("runs auth request reads as app_kernel under RLS while the DEC-011 lookup lists eligible memberships", async () => {
@@ -382,6 +484,114 @@ describe("manager auth (SLICE-008, DEC-010)", () => {
     } finally {
       await authDb.end();
     }
+  });
+
+  it("widens the DEC-011 function to active supervisors without changing its return fields", async () => {
+    const url = inject("databaseUrl");
+    const authDb = createAuthDb(url);
+    const authUserId = randomUUID();
+    const personId = randomUUID();
+    await insertPerson({
+      id: personId,
+      workspaceId: workspaceA,
+      displayName: "RLS Supervisor",
+      roleClass: "supervisor",
+      email: "rls-supervisor@example.test",
+      authUserId,
+    });
+    try {
+      expect(await authDb.withClient((client) => dashboardMembershipsByAuthUserId(client, authUserId))).toEqual([
+        { workspace_id: workspaceA, workspace_display_name: "Auth A GmbH" },
+      ]);
+      expect(await authDb.withWorkspace(workspaceA, (client) => dashboardMembershipByWorkspace(client, authUserId, workspaceA))).toMatchObject({
+        person_id: personId,
+        role_class: "supervisor",
+        workspace_id: workspaceA,
+      });
+    } finally {
+      await authDb.end();
+    }
+  });
+
+  it("rejects Google invite state tampering before person.link_auth", async () => {
+    const personId = randomUUID();
+    const email = `state-${personId}@example.test`;
+    await insertPerson({ id: personId, workspaceId: workspaceA, displayName: "State Supervisor", roleClass: "supervisor", email });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const binding = googleInviteState(workspaceA, personId);
+    const authUserId = randomUUID();
+    const result = await auth.completeGoogleInvite({
+      accessToken: tokenFor(googleIdentity({ id: authUserId, email, providerEmail: email, emailVerified: true })),
+      state: randomUUID(),
+      stateCookie: binding.cookie,
+    });
+    expect(result.envelope).toMatchObject({ status: "rejected", result: { code: "validation_failed" } });
+    expect(await personAuthUser(personId)).toBeNull();
+    expect(await linkInvocationCount(personId, authUserId)).toBe(0);
+  });
+
+  it("rejects an unverified Google provider email even when user_metadata claims verification", async () => {
+    const personId = randomUUID();
+    const email = `unverified-${personId}@example.test`;
+    await insertPerson({ id: personId, workspaceId: workspaceA, displayName: "Unverified Supervisor", roleClass: "supervisor", email });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const binding = googleInviteState(workspaceA, personId);
+    const result = await auth.completeGoogleInvite({
+      accessToken: tokenFor(
+        googleIdentity({
+          id: randomUUID(),
+          email,
+          providerEmail: email,
+          emailVerified: false,
+          userMetadata: { email, email_verified: true },
+        }),
+      ),
+      state: binding.state,
+      stateCookie: binding.cookie,
+    });
+    expect(result.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
+    expect(await personAuthUser(personId)).toBeNull();
+  });
+
+  it("rejects a verified Google provider email that does not match the invited email", async () => {
+    const personId = randomUUID();
+    const email = `mismatch-google-${personId}@example.test`;
+    await insertPerson({ id: personId, workspaceId: workspaceA, displayName: "Mismatch Google Supervisor", roleClass: "supervisor", email });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const binding = googleInviteState(workspaceA, personId);
+    const result = await auth.completeGoogleInvite({
+      accessToken: tokenFor(
+        googleIdentity({ id: randomUUID(), email, providerEmail: `other-${personId}@example.test`, emailVerified: true }),
+      ),
+      state: binding.state,
+      stateCookie: binding.cookie,
+    });
+    expect(result.envelope).toMatchObject({ status: "rejected", result: { code: "auth_email_mismatch" } });
+    expect(await personAuthUser(personId)).toBeNull();
+  });
+
+  it("links a supervisor from the verified Google identity email case-insensitively and ignores user_metadata", async () => {
+    const personId = randomUUID();
+    const invitedEmail = `Google.${personId}@Example.Test`;
+    await insertPerson({ id: personId, workspaceId: workspaceA, displayName: "Google Supervisor", roleClass: "supervisor", email: invitedEmail });
+    expect(await dispatch(ownerA, "person.invite", { person_id: personId })).toMatchObject({ status: "ok" });
+    const binding = googleInviteState(workspaceA, personId);
+    const authUserId = randomUUID();
+    const result = await auth.completeGoogleInvite({
+      accessToken: tokenFor(
+        googleIdentity({
+          id: authUserId,
+          email: "ignored-user-email@example.test",
+          providerEmail: invitedEmail.toLowerCase(),
+          emailVerified: true,
+          userMetadata: { email: "attacker@example.test", email_verified: false },
+        }),
+      ),
+      state: binding.state,
+      stateCookie: binding.cookie,
+    });
+    expect(result.envelope.status).toBe("ok");
+    expect(await personAuthUser(personId)).toBe(authUserId);
   });
 
   it("rejects invite acceptance when no person.invite was issued for the person", async () => {

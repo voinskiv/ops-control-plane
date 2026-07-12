@@ -54,7 +54,7 @@ export interface DashboardMembership {
   person_id: string;
   workspace_id: string;
   workspace_display_name: string;
-  role_class: Extract<RoleClass, "owner" | "manager">;
+  role_class: Extract<RoleClass, "owner" | "manager" | "supervisor">;
   locale: SupportedLocale;
 }
 
@@ -212,7 +212,7 @@ export async function dashboardMembershipByWorkspace(
         eq(persons.authUserId, authUserId),
         eq(persons.workspaceId, workspaceId),
         eq(persons.status, "active"),
-        inArray(persons.roleClass, ["owner", "manager"]),
+        inArray(persons.roleClass, ["owner", "manager", "supervisor"]),
         eq(workspaces.status, "active"),
       ),
     )
@@ -225,7 +225,7 @@ export async function dashboardMembershipByWorkspace(
     person_id: row.personId,
     workspace_id: row.workspaceId,
     workspace_display_name: row.workspaceDisplayName,
-    role_class: row.roleClass === "owner" ? "owner" : "manager",
+    role_class: row.roleClass === "owner" || row.roleClass === "manager" ? row.roleClass : "supervisor",
     locale: supportedLocale(row.locale),
   };
 }
@@ -343,12 +343,21 @@ async function validateLinkAuthUserToPerson(
     workspaceId: string;
     personId: string;
     email: string;
+    caseInsensitiveEmail?: boolean;
   },
 ): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
-  if (person === null || person.status !== "active" || (person.role_class !== "owner" && person.role_class !== "manager")) {
+  if (
+    person === null ||
+    person.status !== "active" ||
+    (person.role_class !== "owner" && person.role_class !== "manager" && person.role_class !== "supervisor")
+  ) {
     return { rejected: "validation_failed" };
   }
-  if (person.email === null || person.email !== params.email) {
+  const emailsMatch = (left: string, right: string): boolean =>
+    params.caseInsensitiveEmail === true
+      ? left.trim().toLowerCase() === right.trim().toLowerCase()
+      : left === right;
+  if (person.email === null || !emailsMatch(person.email, params.email)) {
     return { rejected: "auth_email_mismatch" };
   }
   if (person.auth_user_id !== null) {
@@ -358,7 +367,7 @@ async function validateLinkAuthUserToPerson(
   if (invitedEmail === null) {
     return { rejected: "invite_ineligible" };
   }
-  if (invitedEmail !== params.email) {
+  if (!emailsMatch(invitedEmail, params.email)) {
     return { rejected: "auth_email_mismatch" };
   }
   return { ok: true };
@@ -370,6 +379,7 @@ export async function preflightLinkAuthUserToPerson(
     workspaceId: string;
     personId: string;
     email: string;
+    caseInsensitiveEmail?: boolean;
   },
 ): Promise<{ ok: true } | { rejected: LinkAuthRejected }> {
   const before = await personById(tx, params.workspaceId, params.personId);
@@ -383,6 +393,7 @@ export async function linkAuthUserToPerson(
     personId: string;
     authUserId: string;
     email: string;
+    caseInsensitiveEmail?: boolean;
   },
 ): Promise<{ person: PersonSnapshot } | { rejected: LinkAuthRejected }> {
   const person = await lockedPersonForLink(tx, params.workspaceId, params.personId);

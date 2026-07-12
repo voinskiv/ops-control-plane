@@ -1,6 +1,16 @@
 export interface AuthIdentity {
   id: string;
   email: string;
+  authenticationMethods?: string[];
+  identities?: AuthUserIdentity[];
+}
+
+export interface AuthUserIdentity {
+  provider: string;
+  identityData: {
+    email?: string;
+    emailVerified?: boolean;
+  };
 }
 
 export interface SendInviteParams {
@@ -37,21 +47,71 @@ function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? "http://localhost:3000";
 }
 
-async function parseAuthResponse(response: Response): Promise<AuthIdentity | null> {
+function authenticationMethods(accessToken: string): string[] {
+  const payload = accessToken.split(".")[1];
+  if (payload === undefined) {
+    return [];
+  }
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      amr?: Array<{ method?: unknown }>;
+    };
+    return (claims.amr ?? []).flatMap((entry) => (typeof entry.method === "string" ? [entry.method] : []));
+  } catch {
+    return [];
+  }
+}
+
+function authIdentities(value: unknown): AuthUserIdentity[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((candidate) => {
+    const identity = candidate as { provider?: unknown; identity_data?: unknown };
+    const identityData = identity.identity_data as { email?: unknown; email_verified?: unknown } | null;
+    if (typeof identity.provider !== "string" || identityData === null || typeof identityData !== "object") {
+      return [];
+    }
+    return [
+      {
+        provider: identity.provider,
+        identityData: {
+          email: typeof identityData.email === "string" ? identityData.email : undefined,
+          emailVerified: identityData.email_verified === true,
+        },
+      },
+    ];
+  });
+}
+
+async function parseAuthResponse(response: Response, accessToken: string): Promise<AuthIdentity | null> {
   if (!response.ok) {
     return null;
   }
-  const body = (await response.json().catch(() => null)) as { id?: unknown; email?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as {
+    id?: unknown;
+    email?: unknown;
+    identities?: unknown;
+  } | null;
   if (typeof body?.id !== "string" || typeof body.email !== "string") {
     return null;
   }
-  return { id: body.id, email: body.email };
+  return {
+    id: body.id,
+    email: body.email,
+    authenticationMethods: authenticationMethods(accessToken),
+    identities: authIdentities(body.identities),
+  };
 }
 
 function supabaseUrl(path: string, query?: URLSearchParams): string {
   const base = requiredEnv("SUPABASE_URL").replace(/\/$/, "");
   const suffix = query === undefined ? "" : `?${query.toString()}`;
   return `${base}/auth/v1/${path}${suffix}`;
+}
+
+export function googleOAuthUrl(redirectTo: string): string {
+  return supabaseUrl("authorize", new URLSearchParams({ provider: "google", redirect_to: redirectTo }));
 }
 
 async function supabasePost(path: string, serviceRole: boolean, body: unknown, query?: URLSearchParams): Promise<unknown> {
@@ -114,7 +174,7 @@ const supabaseTransport: AuthTransport = {
         authorization: `Bearer ${accessToken}`,
       },
     });
-    return parseAuthResponse(response);
+    return parseAuthResponse(response, accessToken);
   },
 };
 

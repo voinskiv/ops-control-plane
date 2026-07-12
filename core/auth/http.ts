@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { DashboardAuth, SessionResult } from "./session";
-import { cookieHeader } from "./session";
+import { cookieHeader, GOOGLE_INVITE_STATE_COOKIE } from "./session";
 import type { ResponseEnvelope } from "../actions/types";
 
 const tokenBody = z
@@ -22,6 +22,13 @@ const acceptBody = z
     access_token: z.string().min(1).max(8192),
     workspace_id: z.uuid(),
     person_id: z.uuid(),
+  })
+  .strict();
+
+const googleAcceptBody = z
+  .object({
+    access_token: z.string().min(1).max(8192),
+    state: z.uuid(),
   })
   .strict();
 
@@ -54,6 +61,16 @@ async function jsonBody(request: Request): Promise<unknown> {
   return request.json().catch(() => null);
 }
 
+function requestCookie(request: Request, name: string): string | null {
+  for (const part of (request.headers.get("cookie") ?? "").split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === name) {
+      return decodeURIComponent(rawValue.join("="));
+    }
+  }
+  return null;
+}
+
 export async function handleMagicLinkPost(auth: DashboardAuth, request: Request): Promise<Response> {
   const form = await request.formData().catch(() => null);
   const email = form?.get("email");
@@ -62,6 +79,49 @@ export async function handleMagicLinkPost(auth: DashboardAuth, request: Request)
     return Response.json(envelope, { status: statusFor(envelope) });
   }
   return Response.redirect(new URL("/login?sent=1", request.url), 303);
+}
+
+export function handleGoogleSignInGet(auth: DashboardAuth, request: Request): Response {
+  return Response.redirect(auth.startGoogleSignIn(request.url), 303);
+}
+
+export async function handleGoogleInvitePost(auth: DashboardAuth, request: Request): Promise<Response> {
+  const form = await request.formData().catch(() => null);
+  const workspaceId = form?.get("workspace_id");
+  const personId = form?.get("person_id");
+  const started = auth.startGoogleInvite(
+    request.url,
+    typeof workspaceId === "string" ? workspaceId : "",
+    typeof personId === "string" ? personId : "",
+  );
+  if (started === null) {
+    return Response.json(
+      { status: "rejected", result: { code: "validation_failed" }, warnings: [] },
+      { status: 400 },
+    );
+  }
+  const response = Response.redirect(started.location, 303);
+  for (const cookie of started.cookies) {
+    response.headers.append("set-cookie", cookieHeader(cookie));
+  }
+  return response;
+}
+
+export async function handleGoogleInviteAcceptPost(auth: DashboardAuth, request: Request): Promise<Response> {
+  const parsed = googleAcceptBody.safeParse(await jsonBody(request));
+  if (!parsed.success) {
+    return Response.json(
+      { status: "rejected", result: { code: "validation_failed" }, warnings: [] },
+      { status: 400 },
+    );
+  }
+  return responseFromSession(
+    await auth.completeGoogleInvite({
+      accessToken: parsed.data.access_token,
+      state: parsed.data.state,
+      stateCookie: requestCookie(request, GOOGLE_INVITE_STATE_COOKIE),
+    }),
+  );
 }
 
 export async function handleSessionPost(auth: DashboardAuth, request: Request): Promise<Response> {

@@ -683,6 +683,113 @@ scope for every session until resolved.
 
 ---
 
+### DEC-014 — 2026-07-12 — SLICE-009 Google invite handoff and capture/dashboard route contract
+- Status: RESOLVED
+- Raised by: SLICE-009 implementation stop after DEC-013 doc-PR #20 merged.
+  No answer-dependent implementation code written.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: Two contracts required by DEC-013 remain unspecified.
+
+    **(1) How does an invited but unlinked supervisor carry the explicit
+    `(workspace_id, person_id)` invite binding through Google OAuth?**
+    DEC-010 rejects email-match auto-linking and requires explicit invite
+    acceptance; DEC-012 binds acceptance to the invited email; DEC-013 requires
+    Google acceptance using a provider-verified, case-normalized matching
+    email. The current generic Google login has no person/workspace binding,
+    while the current invite redirect carries that binding only into
+    `/auth/accept`.
+
+    Options considered: (A) Require the existing email invite acceptance to
+    link `persons.auth_user_id` first; Google is a subsequent login method for
+    the already-linked Supabase user. A reviewer picks this for the smallest
+    implementation and no new OAuth state contract, accepting that Google is
+    not itself an invite-acceptance path. (B) Add a direct Google invite
+    acceptance flow: the bound invite acceptance surface starts Google OAuth,
+    round-trips the workspace/person binding in server-validated, CSRF-bound
+    state, then invokes `person.link_auth` only after the returned Supabase
+    session proves OAuth plus a Google identity whose provider email is
+    verified and matches the invited email case-insensitively. A reviewer picks
+    this to make "Google acceptance" literal, accepting a new visible flow,
+    state/cookie contract, and tests. (C) Let generic Google login find an
+    unlinked pending invite by verified email. A reviewer picks this for the
+    simplest user journey, but it reintroduces email-match auto-linking and
+    discards DEC-010/DEC-012's explicit workspace/person binding.
+
+    Smallest-safe default: none — hard blocked. A does not deliver direct
+    Google invite acceptance; B adds a security-relevant state and route
+    contract; C contradicts the resolved invite-binding decisions.
+
+    **(2) Which concrete routes are the `(capture)` and `(dashboard)` surfaces,
+    and what response constitutes the required typed, catalog-translated
+    dashboard rejection?**
+    The repo currently has only `app/page.tsx` at `/`; the §19 route-group names
+    are not URL segments and no capture shell exists.
+
+    Options considered: (A) Keep `/` as dashboard, add `/capture` as the
+    capture shell, redirect supervisors there after session establishment, and
+    make dashboard page requests render a catalog-translated typed rejection.
+    A reviewer picks this to preserve the existing root URL, accepting a new
+    public `/capture` path and a page-level rejection representation. (B) Make
+    `/` a role router and add explicit `/dashboard` and `/capture` surfaces.
+    A reviewer picks this for the clearest permanent boundary, accepting two
+    new visible paths and a change to the current root behavior. (C) Keep `/`
+    as one role-sensitive shell that renders dashboard or capture content from
+    the per-request membership, deferring explicit route paths until those
+    surfaces grow. A reviewer picks this for the smallest routing change, but
+    SLICE-009 cannot demonstrate a dashboard-route typed rejection because no
+    distinct dashboard route exists. For A or B, the rejection could be either
+    an HTTP JSON envelope or a rendered catalog-translated page carrying the
+    typed code; those are externally different contracts.
+
+    Smallest-safe default: none — hard blocked. The options define different
+    visible URLs and different observable error responses.
+
+  - Architecture section(s) involved: §8 surfaces table; §16 auth paragraph;
+    §19 repo map and Phase 0 done-means; §21.10; DEC-010 Resolutions 1–4;
+    DEC-012; DEC-013 Resolution items 2, 3, 4, 7, and 13; PROGRESS.md
+    SLICE-009 Done-when.
+  - Options considered: Enumerated under each blocking sub-question above.
+  - Smallest-safe default (if allowed to proceed): none — hard blocked.
+  - Why this needs human sign-off: SECURITY/AUTHZ and visible API/surface
+    behavior. The wrong Google handoff can link an identity without the
+    explicit invited person/workspace grant or make the approved Google path
+    impossible. The wrong route contract can expose dashboard content to a
+    supervisor, silently change existing URLs, or establish an unapproved
+    externally visible error format.
+- Resolution:
+  1. (Q1) Option B — direct Google invite acceptance. The invite
+     acceptance surface offers both paths: the existing magic-link/email
+     acceptance (unchanged), and a Google OAuth acceptance. The
+     (workspace_id, person_id) invite binding round-trips through the
+     OAuth flow in server-validated, CSRF-bound state (httpOnly cookie
+     plus state-parameter comparison; never in client-editable storage
+     or user_metadata). person.link_auth is invoked only after the
+     returned Supabase session contains a Google identity whose email is
+     read from identities[].identity_data, has email_verified=true, and
+     equals the invited email case-normalized (DEC-012/DEC-013 item 7
+     predicate). user_metadata is never an authorization or verification
+     input. Option C remains rejected as email-match auto-linking.
+  2. (Q2) Option B — "/" becomes a role router that re-resolves the
+     active membership per request and redirects: owner/manager →
+     /dashboard, supervisor → /capture. /dashboard and /capture are the
+     concrete surfaces for §19's (dashboard) and (capture) route groups.
+     A supervisor session requesting any /dashboard route receives
+     HTTP 403 with a rendered, catalog-translated page carrying the
+     typed rejection code; /api/actions and /api/reads keep the existing
+     JSON envelope with the same catalog key. Owner/manager access to
+     /capture remains per F6 inheritance.
+  3. Architecture impact: concretizes §16/§19 and DEC-013 items 3, 7,
+     and 13 at implementation level; no ARCHITECTURE.md text amendment
+     required — route paths and the OAuth state mechanics are
+     implementation contracts recorded by this entry. SLICE-009
+     Done-when is satisfiable as written; no PROGRESS.md change.
+- Approved by: Vitali Voinski (operator), 2026-07-12; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
+- Architecture impact: concretizes §16/§19 and DEC-013 items 3, 7, and
+  13 at implementation level; no ARCHITECTURE.md text amendment required.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
 - 2026-07-05 SLICE-001: test runner = Vitest; the de.json completeness check is a Vitest test (tests/i18n.test.ts) so it wires into CI without a stray top-level scripts/ dir (§21.1).
