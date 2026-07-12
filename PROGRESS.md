@@ -88,10 +88,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
 
 ## Phase 1: Board + capture live
 
-- [ ] SLICE-012: Commitment type definitions (coverage, output, service_scope)
+- [x] SLICE-012: Commitment type definitions (coverage, output, service_scope)
       Architecture ref: §3 (commitment type definitions, F10)
       Done when: core/domain/commitment-types/ registers the three v1 types with Zod spec schema, satisfying record kinds, fulfillment rule, shortfall triggers, and capture-UI hints per the canonical F10 mapping; proof/recovery enum values carry no v1 definition; unit tests per type
       Depends on: SLICE-003
+      Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (186 tests), and production build green.
 
 - [ ] SLICE-013: Commitment state machine + commitment.* actions + manager forms
       Architecture ref: §4 (Commitment), §5 catalog (commitment.*), §19 Phase 1

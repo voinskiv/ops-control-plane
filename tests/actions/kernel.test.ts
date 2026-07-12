@@ -374,6 +374,7 @@ describe("dispatch rejections (§20.1, §21.3)", () => {
       "client.archive",
       "client.create",
       "client.update",
+      "commitment.draft",
       "person.create",
       "person.deactivate",
       "person.invite",
@@ -816,6 +817,20 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     "site.activate": {
       actor: manager,
       input: async () => ({ site_id: await adminInsertSite("draft") }),
+      expected: "ok",
+    },
+    "commitment.draft": {
+      actor: manager,
+      input: async () => ({
+        site_id: await adminInsertSite("active"),
+        type: "coverage",
+        title: "Property Coverage",
+        spec: { window_start_time: "08:00", window_end_time: "16:00" },
+        schedule_rrule: "FREQ=DAILY",
+        target_qty: 1,
+        valid_from: "2026-07-13",
+        valid_to: "2026-12-31",
+      }),
       expected: "ok",
     },
   };
