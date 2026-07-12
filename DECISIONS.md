@@ -569,6 +569,120 @@ scope for every session until resolved.
 
 ---
 
+### DEC-013 — 2026-07-12 — Supervisor authentication unified onto Supabase Auth; device-token/PIN path removed from v1; login-provider set fixed
+- Status: RESOLVED
+- Raised by: SLICE-009 pre-implementation architecture review plus operator
+  product rulings on browser-first surface strategy, unified accounts, and
+  social-login requirements. No answer-dependent application code written.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: Does SLICE-009 build the §16 device-enrollment system
+    (`device.enroll`, `device.claim`, `device.revoke`, device token, and PIN),
+    or extend the SLICE-008 Supabase identity to supervisors?
+  - Architecture section(s) involved: §3 persons/auth_devices and
+    execution_records; §4 ExecutionRecord; §5 action catalog and
+    kernel-internal operations; §7 access path; §8 roles/surfaces; §9
+    entitlements; §10 capture surface; §11 offline/sync; §16 auth and privacy;
+    §18 deferred paths; §19 Phase 0/1; §20.8/10; §21.2/10/12; Appendices A/B;
+    DEC-008 and DEC-010 through DEC-012; PROGRESS.md
+    SLICE-009/010/011/015/016/021/043.
+  - Options considered:
+    - (A) Extend Supabase identity — recommended. Owners, managers, and
+      supervisors share DEC-010/DEC-012's invite/link/session contract.
+      Supervisors enter the capture surface while dashboard routes reject
+      them. Consequence: one account system, immediate per-request
+      deactivation/role enforcement, and email magic link plus Google OAuth in
+      v1; one DEC-authorized migration widens DEC-011's membership function.
+    - (B) Keep device enrollment. Supervisors claim manager-issued QR/8-digit
+      codes, receive device tokens, and unlock with PINs. A reviewer would pick
+      this to retain email-less onboarding and installed-PWA storage isolation.
+      Consequence: v1 carries a parallel public authentication system,
+      credential lifecycle, rate limits, audit operation, and support burden.
+      Rejected because browser-first operation and provisioned supervisor email
+      remove its justifications, and it is a dead end against the
+      native-app/unified-account direction.
+    - (C) Hybrid. Supervisors may use Supabase identity or device enrollment.
+      A reviewer would pick this to retain an email-less fallback while adding
+      social login. Consequence: both credential systems and their routing,
+      revocation, testing, and support obligations remain. Rejected as the
+      union of A and B's costs.
+  - Smallest-safe default (if allowed to proceed): none — hard blocked.
+  - Why this needs human sign-off: PRODUCT behavior, DOMAIN model, ACTION
+    kernel, TENANCY, PRIVACY/PII, and SECURITY/AUTHZ. The wrong default could
+    grant dashboard access to supervisors, retain access after deactivation,
+    create an unsupported public credential path, or flush offline writes
+    under a stale session.
+- Resolution:
+  1. `person.invite` widens its precondition from `role_class` in
+     `{owner, manager}` to `{owner, manager, supervisor}`. All other DEC-010
+     and DEC-012 semantics remain unchanged: acceptance binds to the email to
+     which the latest invite was issued; email-match auto-linking remains
+     rejected; re-invite remains permitted while unlinked; linked persons
+     receive the existing typed rejection.
+  2. Session eligibility widens to active persons with `role_class` in
+     `{owner, manager, supervisor}`. DEC-010 Resolution 2 remains unchanged:
+     the Supabase session carries identity only; the selected `workspace_id`
+     cookie is selection intent, never authority; every request revalidates the
+     membership; and workspace switching uses an explicit endpoint running
+     identical validation. F11 remains unchanged: one auth identity may hold
+     roles in multiple workspaces. DEC-010 Resolution 4 remains unchanged:
+     session establishment returns qualifying memberships as workspace id and
+     display name only.
+  3. DEC-010 Resolution 3 changes only from supervisor session denial to
+     surface routing. Supervisor sessions reach `(capture)` routes only;
+     `(dashboard)` routes return a typed, catalog-translated rejection.
+     Owner/manager capture access remains unchanged.
+  4. DEC-011's membership function widens its role filter to
+     `{owner, manager, supervisor}` through one migration authorized by this
+     decision, mirroring DEC-011's precedent. Its active-person,
+     active-workspace, RLS, SECURITY DEFINER, and return-field contracts remain
+     unchanged.
+  5. `device.enroll`, `device.claim`, and `device.revoke` are removed from the
+     v1 public catalog and registry. Appendix B's `device.touch` is removed.
+     `auth_devices`, `persons.pin_hash`, and `execution_records.device_id`
+     remain reserved, unused, and unmigrated; `execution_records.device_id` is
+     always NULL in v1 and the `record.capture` audit extra records it as
+     reserved/NULL. No substitute client identifier is introduced. Reopening
+     device credentials or adding a client-instance identifier requires a new
+     decision.
+  6. `proof.complete_upload` replaces actor `device` with S, M; Y remains.
+     The capturing person's Supabase session invokes completion after blob
+     upload, while the system path remains available.
+  7. Email magic link and Google OAuth ship in v1. Google acceptance uses only
+     Supabase's provider-verified email, requires `email_verified=true`, and
+     compares the case-normalized verified email to the case-normalized invited
+     email. DEC-012's invited-email predicate otherwise remains unchanged.
+  8. Apple enters only when iPhone-holding supervisors are present at the
+     pilot and the developer account exists. Microsoft/Entra enters only when
+     an Enterprise-tier customer names it under §9's SSO reservation. Passkeys
+     are post-v1 convenience credentials on existing accounts only. Passwords,
+     SMS OTP, and long-tail social providers are excluded and require a new
+     decision to reopen. §16's SMS-OTP rejection stands. A provider enters only
+     when a named user group demonstrably holds that account type and the phase
+     touches that group's login surface.
+  9. Workers remain outside the account system in v1. Worker read-own remains
+     the §18 deferred item and reuses the same invite mechanism.
+  10. Supervisor seats remain free under §9. Future pricing changes belong in
+      `plans.limits`, not authentication.
+  11. On reconnect, the client refreshes the Supabase session and completes
+      per-request membership validation before flushing the outbox. Cached
+      day-pack rendering never requires a live token. This lands in
+      SLICE-015/021 contract text.
+  12. DEC-008's pseudonymization recipe continues to revoke matching
+      `auth_devices`. Because the table is reserved and empty in v1, that
+      merged code path is a harmless no-op; no code or DEC-008 amendment is
+      required.
+  13. The `(capture)` and `public/` repo-map names and comments remain
+      unchanged. The manifest and service worker still ship; installation is
+      optional, while the service worker continues to support offline capture.
+- Approved by: Vitali Voinski (operator), 2026-07-12; proposal authored by the drafting agent, transcribed by the implementing agent.
+- Architecture impact: amends §3, §4, §5, §7 through §11, §16, §18, §19,
+  §20.8/10, §21.10, and Appendices A/B as shown below. §21.2 applies to the
+  reduced catalog without textual amendment; §21.12 and the repo map remain
+  unchanged. PROGRESS.md is amended as shown below.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
 - 2026-07-05 SLICE-001: test runner = Vitest; the de.json completeness check is a Vitest test (tests/i18n.test.ts) so it wires into CI without a stray top-level scripts/ dir (§21.1).
