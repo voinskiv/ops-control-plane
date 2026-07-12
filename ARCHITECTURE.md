@@ -41,7 +41,7 @@ Conventions, binding for all tables: app-generated **UUIDv7** primary keys (offl
 | agent_proposals | agent_code, action_name, input jsonb, edited_input jsonb?, rationale text, confidence?, refs jsonb, expires_at, decided_by?, decided_at?, invocation_id?, status | any entity via refs | §4 | workspace_id |
 | documents | client_id?, kind enum(order, einsatzvereinbarung, scope, other), storage_path, status(uploaded, extracted, failed) | client | — | workspace_id |
 | action_invocations | idempotency_key, action_name, actor_type, actor_id, input_hash, result jsonb (stores the full `{status, result, warnings}` response envelope so a replay is byte-identical — F24), status(ok, rejected, error) — unique (workspace_id, idempotency_key); row is inserted pending and updated exactly once with the response inside the same kernel transaction (F30) | — | — | workspace_id |
-| audit_events | invocation_id?, actor_type enum(person, agent, system), actor_id?, action, entity_type, entity_id, before jsonb?, after jsonb?, at | everything | insert-only | workspace_id |
+| audit_events | invocation_id?, actor_type enum(person, agent, system, platform), actor_id?, action, entity_type, entity_id, before jsonb?, after jsonb?, extras jsonb?, at | everything | insert-only | workspace_id |
 | outbound_messages | channel enum(email, webpush, whatsapp, teams), to jsonb, template_key, payload jsonb, sensitive bool, approved_by?, attempts, sent_at?, status | — | queued, sent, failed, blocked | workspace_id |
 | plans | code PK, name, limits jsonb (active_sites, manager_seats, features), price jsonb | global config | — | none (global) |
 
@@ -372,7 +372,7 @@ Touch rules: one coding agent at a time. **PR granularity (F8):** per AGENTS.md 
 
 1. Repo tree matches the §19 module map; no stray top-level directories.
 2. Action registry names match the §5 catalog exactly for the actions in scope through the current phase (full catalog match at Phase 5); the Appendix B kernel-internal ops are the only non-catalog kernel writers; additions/removals appear in PR DEVIATIONS (F19, F7).
-3. Kernel pipeline order in code = authorize → entitlement → threshold → validate → transaction(execute + audit) → persist result.
+3. Kernel pipeline order in code = authorize → entitlement → threshold → validate → transaction(execute + audit) → persist result. The transaction opens before the gate chain because rejected invocations persist their rows (F24) and the DEC-005 replay lookup runs in-transaction; the pinned order governs the gate sequence, not the BEGIN position.
 4. All primary keys are app-generated UUIDv7 — except global config tables (`plans`, which keep a text `code` PK, F9); created_at present on every table.
 5. SQL evidence attached: every tenant table has workspace_id NOT NULL, RLS enabled, and a (workspace_id, …) index.
 6. Immutability enforcement present on exactly {audit_events (append-only), execution_records, proofs (BEFORE triggers rejecting non-kernel or fact-column UPDATE per F4)}; action_invocations is inserted pending and updated once with the response inside the same kernel transaction (F30).
