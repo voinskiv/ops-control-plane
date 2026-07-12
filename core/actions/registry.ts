@@ -11,7 +11,7 @@ import {
   personPseudonymizeAction,
   personUpdateAction,
 } from "./person";
-import { siteActivateAction, siteArchiveAction, siteCreateAction, siteUpdateAction } from "./site";
+import { siteActivateAction, siteCreateAction, siteUpdateAction } from "./site";
 import { workspaceCreateAction } from "./workspace";
 
 export class ActionRegistry {
@@ -47,7 +47,6 @@ registry.register(clientArchiveAction);
 registry.register(siteCreateAction);
 registry.register(siteUpdateAction);
 registry.register(siteActivateAction);
-registry.register(siteArchiveAction);
 
 export const internalRegistry = new ActionRegistry();
 internalRegistry.register(personLinkAuthOperation);

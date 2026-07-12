@@ -380,7 +380,6 @@ describe("dispatch rejections (§20.1, §21.3)", () => {
       "person.pseudonymize",
       "person.update",
       "site.activate",
-      "site.archive",
       "site.create",
       "site.update",
       "workspace.create",
@@ -396,6 +395,15 @@ describe("dispatch rejections (§20.1, §21.3)", () => {
     expect(row?.status).toBe("rejected");
     const replay = await kernel.dispatch(manager, { name: "test.does_not_exist", input: {}, idempotencyKey: key });
     expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
+  });
+
+  it("site.archive → standard typed unknown_action rejection", async () => {
+    const envelope = await kernel.dispatch(manager, {
+      name: "site.archive",
+      input: { site_id: randomUUID() },
+      idempotencyKey: freshKey(),
+    });
+    expect(envelope).toEqual({ status: "rejected", result: { code: "unknown_action" }, warnings: [] });
   });
 
   it("every registered action has a Zod input schema (§20.1)", () => {
@@ -809,13 +817,6 @@ describe("audit-per-executed-action property test (§20.3)", () => {
       actor: manager,
       input: async () => ({ site_id: await adminInsertSite("draft") }),
       expected: "ok",
-    },
-    // DEC-008/DEC-009: registered per catalog for §21.2's exact-match, but
-    // deferred — its handler always throws (see core/actions/site.ts).
-    "site.archive": {
-      actor: manager,
-      input: async () => ({ site_id: await adminInsertSite("active") }),
-      expected: "error",
     },
   };
 

@@ -311,16 +311,16 @@ describe("site.activate (SLICE-007, DEC-009 Q1)", () => {
   });
 });
 
-describe("site.archive (deferred, DEC-008/DEC-009)", () => {
-  it("is registered (§21.2 exact catalog match) but its handler is not implemented — errors without mutating or leaking audit", async () => {
+describe("site.archive (deferred, DEC-009 R1 / DEC-015 item 2)", () => {
+  it("is unregistered and returns unknown_action without mutating or leaking audit", async () => {
     const clientId = await insertClient();
     const siteId = await insertSite(clientId, "active");
     const key = freshKey();
     const envelope = await dispatch(manager, "site.archive", { site_id: siteId }, key);
-    expect(envelope).toMatchObject({ status: "error", result: { code: "internal_error" } });
+    expect(envelope).toEqual({ status: "rejected", result: { code: "unknown_action" }, warnings: [] });
     expect(await siteRow(siteId)).toMatchObject({ status: "active" });
     const row = await invocationRow(key);
-    expect(row?.status).toBe("error");
+    expect(row?.status).toBe("rejected");
     expect(await auditEventsFor(row?.id ?? "")).toEqual([]);
   });
 });

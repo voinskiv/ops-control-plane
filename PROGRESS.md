@@ -72,19 +72,19 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Architecture ref: §5 catalog (person.invite), §7, §8, §16, DEC-010, DEC-011, DEC-012, DEC-013
       Done when: person.invite accepts active unlinked persons with role_class in {owner, manager, supervisor} while preserving invited-email binding and re-invite semantics; an invited supervisor completes magic-link and Google acceptance, with Google requiring a provider-verified email equal case-normalized to the invited email; the supervisor lands on the (capture) shell and (dashboard) routes return a typed, catalog-translated rejection; every request re-resolves the active person, workspace, and role so deactivation or role change takes effect on the next request; DEC-011's membership function is widened by the DEC-013-authorized migration without changing its RLS or return-field contract; the registry contains no device.enroll/device.claim/device.revoke and Appendix B contains no device.touch; §21.2 exact-match is green
       Depends on: SLICE-006, SLICE-008
-      Status: draft PR #21 opened 2026-07-12; local typecheck, lint, full suite (131 tests), and production build green.
+      Status: merged 2026-07-12 (PR #21); local typecheck, lint, full suite (131 tests), and production build green.
 
 - [x] SLICE-010: Read layer mount + `me` read
       Architecture ref: §5 (reads, F29), §19 Phase 0 done-means
       Done when: GET /api/reads/:name mounts core/reads; the `me` read (empty day-pack shell) returns for an authenticated supervisor session after per-request role/workspace revalidation
       Depends on: SLICE-003, SLICE-008, SLICE-009
-      Status: merge-ready 2026-07-12; local typecheck, lint, i18n completeness, full suite (139 tests), and production build green.
+      Status: merged 2026-07-12 (PR #24); local typecheck, lint, i18n completeness, full suite (139 tests), and production build green.
 
 - [x] SLICE-011: Seed fixture "Demo GmbH" (workspace/persons/clients/sites) via kernel replay + fresh-clone command chain
       Architecture ref: §19 (db/seed, Touch rules seed ruling, DEC-004), §20.12
       Done when: fresh clone → migrations on empty db → seed replays kernel action invocations (workspace.create, person.create, client.create, site.create) with deterministic idempotency keys — no direct SQL — → typecheck + lint + tests green via one documented command chain (§20.12); Phase 0 auth integration is proven by SLICE-009's invited-supervisor acceptance tests rather than seeded device credentials; commitment/window fixtures are explicitly deferred to SLICE-014A (Phase 1); Phase 0 CI gates §20 1–7, 12 all green
       Depends on: SLICE-001 through SLICE-010 (phase integration slice)
-      Status: merge-ready 2026-07-12; PR #25 CI, local typecheck, lint, i18n completeness, full suite (141 tests), seed replay, and production build green.
+      Status: merged 2026-07-12 (PR #25); CI, local typecheck, lint, i18n completeness, full suite (141 tests), seed replay, and production build green.
 
 ## Phase 1: Board + capture live
 

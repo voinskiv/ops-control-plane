@@ -1,11 +1,8 @@
 // SLICE-007: site.* actions per §5 catalog and DEC-009. site.create writes
 // the non-billable 'draft' status (Q1/Q2); site.activate is the sole
 // transition onto 'active' and therefore the sole §9 active-site meter event
-// (Q1). site.archive is registered to satisfy §21.2's exact catalog match
-// but stays deferred per DEC-008/DEC-009 — its handler intentionally throws
-// (smallest-safe stub: reuses the existing generic "error" envelope/
-// internal_error catalog string already exercised by test.fail_after_write
-// in tests/actions/kernel.test.ts, no new RejectionCode or catalog string).
+// (Q1). site.archive stays deferred and is not registered (DEC-009 R1,
+// DEC-015 item 2).
 import { z } from "zod";
 
 import { activeClientLocked } from "../db/clients";
@@ -55,12 +52,6 @@ const siteUpdateInput = z
   );
 
 const siteActivateInput = z
-  .object({
-    site_id: z.uuid(),
-  })
-  .strict();
-
-const siteArchiveInput = z
   .object({
     site_id: z.uuid(),
   })
@@ -195,17 +186,5 @@ export const siteActivateAction: ActionDefinition<z.infer<typeof siteActivateInp
         },
       ],
     };
-  },
-};
-
-// DEC-008/DEC-009: site.archive stays deferred. Registered (per catalog, so
-// §21.2's exact-match holds) but never executes — see file header.
-export const siteArchiveAction: ActionDefinition<z.infer<typeof siteArchiveInput>> = {
-  name: "site.archive",
-  actors: { minHumanRole: "manager" },
-  threshold: "human_only",
-  input: siteArchiveInput,
-  async execute() {
-    throw new Error("site.archive is deferred per DEC-008/DEC-009 — not implemented in SLICE-007");
   },
 };
