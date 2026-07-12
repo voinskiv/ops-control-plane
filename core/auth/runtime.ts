@@ -5,7 +5,7 @@ import { DashboardAuth } from "./session";
 let authDb: AuthDb | null = null;
 let dashboardAuth: DashboardAuth | null = null;
 
-function getAuthDb(): AuthDb {
+export function getAuthDb(): AuthDb {
   if (authDb === null) {
     const connectionString = process.env.DATABASE_URL;
     if (connectionString === undefined || connectionString === "") {
