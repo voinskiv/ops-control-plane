@@ -90,6 +90,8 @@ const personLinkAuthInput = z
     person_id: z.uuid(),
     auth_user_id: z.uuid(),
     email: emailInput,
+    provider: z.literal("google").optional(),
+    email_verified: z.boolean().optional(),
   })
   .strict();
 
@@ -127,7 +129,7 @@ function roleChange(from: RoleClass | null, to: RoleClass): { role_change: { fro
 }
 
 function isInvitableRole(roleClass: RoleClass): boolean {
-  return roleClass === "owner" || roleClass === "manager";
+  return roleClass === "owner" || roleClass === "manager" || roleClass === "supervisor";
 }
 
 function hasEmail(email: string | null): boolean {
@@ -383,7 +385,7 @@ export const personInviteAction: ActionDefinition<z.infer<typeof personInviteInp
     if (
       target === null ||
       target.status !== "active" ||
-      (target.role_class !== "owner" && target.role_class !== "manager") ||
+      !isInvitableRole(target.role_class) ||
       !hasEmail(target.email)
     ) {
       return outcomeRejected("invite_ineligible");
@@ -418,11 +420,16 @@ export const personLinkAuthOperation: ActionDefinition<z.infer<typeof personLink
   threshold: "human_only",
   input: personLinkAuthInput,
   async execute(ctx, input) {
+    const googleAcceptance = input.provider === "google";
+    if (googleAcceptance && input.email_verified !== true) {
+      return outcomeRejected("auth_email_mismatch");
+    }
     const linked = await linkAuthUserToPerson(ctx.tx, {
       workspaceId: workspaceId(ctx),
       personId: input.person_id,
       authUserId: input.auth_user_id,
       email: input.email,
+      caseInsensitiveEmail: googleAcceptance,
     });
     if ("rejected" in linked) {
       return outcomeRejected(linked.rejected);

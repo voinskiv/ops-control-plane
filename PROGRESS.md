@@ -60,10 +60,11 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Status: residual R1 invite-linking hardening completed 2026-07-11; accepting identity now binds to the invite-issued email (DEC-012).
       Status: merged 2026-07-11 (PR #13 + PR #15 follow-up), Done-when green in CI.
 
-- [ ] SLICE-009: Supervisor Supabase auth — invite extension, Google OAuth, capture routing
+- [x] SLICE-009: Supervisor Supabase auth — invite extension, Google OAuth, capture routing
       Architecture ref: §5 catalog (person.invite), §7, §8, §16, DEC-010, DEC-011, DEC-012, DEC-013
       Done when: person.invite accepts active unlinked persons with role_class in {owner, manager, supervisor} while preserving invited-email binding and re-invite semantics; an invited supervisor completes magic-link and Google acceptance, with Google requiring a provider-verified email equal case-normalized to the invited email; the supervisor lands on the (capture) shell and (dashboard) routes return a typed, catalog-translated rejection; every request re-resolves the active person, workspace, and role so deactivation or role change takes effect on the next request; DEC-011's membership function is widened by the DEC-013-authorized migration without changing its RLS or return-field contract; the registry contains no device.enroll/device.claim/device.revoke and Appendix B contains no device.touch; §21.2 exact-match is green
       Depends on: SLICE-006, SLICE-008
+      Status: draft PR #21 opened 2026-07-12; local typecheck, lint, full suite (131 tests), and production build green.
 
 - [ ] SLICE-010: Read layer mount + `me` read
       Architecture ref: §5 (reads, F29), §19 Phase 0 done-means

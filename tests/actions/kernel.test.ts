@@ -369,6 +369,25 @@ afterAll(async () => {
 });
 
 describe("dispatch rejections (§20.1, §21.3)", () => {
+  it("matches the Phase 0 public/internal catalogs exactly without device operations (§21.2, DEC-013 item 5)", () => {
+    expect(applicationRegistry.list().map((definition) => definition.name).sort()).toEqual([
+      "client.archive",
+      "client.create",
+      "client.update",
+      "person.create",
+      "person.deactivate",
+      "person.invite",
+      "person.pseudonymize",
+      "person.update",
+      "site.activate",
+      "site.archive",
+      "site.create",
+      "site.update",
+      "workspace.create",
+    ]);
+    expect(internalRegistry.list().map((definition) => definition.name)).toEqual(["person.link_auth"]);
+  });
+
   it("unknown action → typed rejection, persisted, replay-stable", async () => {
     const key = freshKey();
     const first = await kernel.dispatch(manager, { name: "test.does_not_exist", input: {}, idempotencyKey: key });

@@ -7,14 +7,31 @@
       "title": "Sign in",
       "email": "Email",
       "submit": "Send magic link",
-      "sent": "Magic link sent."
+      "sent": "Magic link sent.",
+      "google": "Sign in with Google"
+    },
+    "accept": {
+      "title": "Accept invitation",
+      "email": "Continue with email",
+      "google": "Continue with Google"
+    },
+    "callback": {
+      "failed": "Sign-in could not be completed."
+    },
+    "capture": {
+      "title": "Capture"
+    },
+    "forbidden": {
+      "title": "Access denied",
+      "code": "Error code: {code}"
     },
     "shell": {
       "workspace": "Workspace: {workspace}"
     },
     "role": {
       "owner": "Owner",
-      "manager": "Manager"
+      "manager": "Manager",
+      "supervisor": "Supervisor"
     }
   },
   "errors": {
@@ -23,10 +40,10 @@
       "unauthenticated": "Not signed in.",
       "unauthorized": "You are not authorized to run this action.",
       "validation_failed": "Invalid input.",
-      "invite_ineligible": "This person cannot receive a dashboard invite.",
+      "invite_ineligible": "This person cannot receive a sign-in invite.",
       "auth_already_linked": "This person is already linked to a sign-in identity.",
       "auth_email_mismatch": "This invite does not match the signed-in email address.",
-      "no_dashboard_membership": "No eligible dashboard membership was found.",
+      "no_dashboard_membership": "No eligible membership was found.",
       "idempotency_conflict": "This idempotency key was already used with different input.",
       "entitlement_denied": "Not included in the current plan.",
       "proposal_gating_unavailable": "Agent proposals are not available yet.",
@@ -37,7 +54,7 @@
   },
   "warnings": {
     "action": {
-      "no_email_for_invitable_role": "This owner or manager has no email address yet."
+      "no_email_for_invitable_role": "This owner, manager, or supervisor has no email address yet."
     }
   }
 }

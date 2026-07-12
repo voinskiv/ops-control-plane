@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import type { Kernel } from "../actions/kernel";
@@ -10,18 +12,26 @@ import {
   type DashboardMembership,
   type PublicDashboardMembership,
 } from "../db/persons";
-import { getAuthTransport, type AuthIdentity } from "./transport";
+import { getAuthTransport, googleOAuthUrl, type AuthIdentity } from "./transport";
 
 export const AUTH_TOKEN_COOKIE = "ocp_auth_token";
 export const WORKSPACE_COOKIE = "ocp_workspace_id";
+export const GOOGLE_INVITE_STATE_COOKIE = "ocp_google_invite_state";
 
 const accessTokenInput = z.string().min(1).max(8192);
 const workspaceIdInput = z.uuid();
 const personIdInput = z.uuid();
 const emailInput = z.string().trim().max(254);
+const googleInviteStateInput = z
+  .object({
+    nonce: z.uuid(),
+    workspaceId: z.uuid(),
+    personId: z.uuid(),
+  })
+  .strict();
 
 export interface CookieChange {
-  name: typeof AUTH_TOKEN_COOKIE | typeof WORKSPACE_COOKIE;
+  name: typeof AUTH_TOKEN_COOKIE | typeof WORKSPACE_COOKIE | typeof GOOGLE_INVITE_STATE_COOKIE;
   value: string;
   maxAge?: number;
 }
@@ -39,6 +49,11 @@ export interface CurrentSession {
 export interface ActorResolution {
   actor: Actor | null;
   membership?: DashboardMembership;
+  cookies: CookieChange[];
+}
+
+export interface GoogleInviteStartResult {
+  location: string;
   cookies: CookieChange[];
 }
 
@@ -85,6 +100,14 @@ function clearWorkspaceCookie(): CookieChange {
   return { name: WORKSPACE_COOKIE, value: "", maxAge: 0 };
 }
 
+function setGoogleInviteStateCookie(value: string): CookieChange {
+  return { name: GOOGLE_INVITE_STATE_COOKIE, value };
+}
+
+function clearGoogleInviteStateCookie(): CookieChange {
+  return { name: GOOGLE_INVITE_STATE_COOKIE, value: "", maxAge: 0 };
+}
+
 function rejected(code: RejectionCode, cookies: CookieChange[] = []): SessionResult {
   return { envelope: envelopeRejected(code), cookies };
 }
@@ -117,6 +140,18 @@ async function identityFromToken(accessToken: string): Promise<AuthIdentity | nu
   return identity;
 }
 
+function googleIdentityEmail(identity: AuthIdentity): string | null {
+  if (!(identity.authenticationMethods ?? []).includes("oauth")) {
+    return null;
+  }
+  const googleIdentity = (identity.identities ?? []).find((candidate) => candidate.provider === "google");
+  const email = googleIdentity?.identityData.email;
+  if (googleIdentity?.identityData.emailVerified !== true || email === undefined || !emailInput.safeParse(email).success) {
+    return null;
+  }
+  return email.trim().toLowerCase();
+}
+
 export class DashboardAuth {
   constructor(
     private readonly authDb: AuthDb,
@@ -130,6 +165,54 @@ export class DashboardAuth {
     }
     await getAuthTransport().sendMagicLink({ email: parsed.data });
     return { status: "ok", result: null, warnings: [] };
+  }
+
+  startGoogleSignIn(requestUrl: string): string {
+    return googleOAuthUrl(new URL("/auth/session", requestUrl).toString());
+  }
+
+  startGoogleInvite(requestUrl: string, workspaceIdValue: string, personIdValue: string): GoogleInviteStartResult | null {
+    const workspaceId = workspaceIdInput.safeParse(workspaceIdValue);
+    const personId = personIdInput.safeParse(personIdValue);
+    if (!workspaceId.success || !personId.success) {
+      return null;
+    }
+    const state = {
+      nonce: randomUUID(),
+      workspaceId: workspaceId.data,
+      personId: personId.data,
+    };
+    const callback = new URL("/auth/google/callback", requestUrl);
+    callback.searchParams.set("state", state.nonce);
+    return {
+      location: googleOAuthUrl(callback.toString()),
+      cookies: [setGoogleInviteStateCookie(JSON.stringify(state))],
+    };
+  }
+
+  async completeGoogleInvite(params: {
+    accessToken: string;
+    state: string;
+    stateCookie: string | null;
+  }): Promise<SessionResult> {
+    const state = workspaceIdInput.safeParse(params.state);
+    const cookieState = (() => {
+      try {
+        return googleInviteStateInput.safeParse(JSON.parse(params.stateCookie ?? ""));
+      } catch {
+        return googleInviteStateInput.safeParse(null);
+      }
+    })();
+    if (!state.success || !cookieState.success || state.data !== cookieState.data.nonce) {
+      return rejected("validation_failed", [clearGoogleInviteStateCookie(), clearWorkspaceCookie()]);
+    }
+    const accepted = await this.acceptInvite({
+      accessToken: params.accessToken,
+      workspaceId: cookieState.data.workspaceId,
+      personId: cookieState.data.personId,
+      requiredProvider: "google",
+    });
+    return { ...accepted, cookies: [...accepted.cookies, clearGoogleInviteStateCookie()] };
   }
 
   async establish(accessToken: string, selectedWorkspaceId?: string): Promise<SessionResult> {
@@ -188,6 +271,7 @@ export class DashboardAuth {
     accessToken: string;
     workspaceId: string;
     personId: string;
+    requiredProvider?: "google";
   }): Promise<SessionResult> {
     const workspaceId = workspaceIdInput.safeParse(params.workspaceId);
     const personId = personIdInput.safeParse(params.personId);
@@ -199,11 +283,17 @@ export class DashboardAuth {
       return rejected("unauthenticated", [clearAuthCookie(), clearWorkspaceCookie()]);
     }
 
+    const acceptingEmail = params.requiredProvider === "google" ? googleIdentityEmail(identity) : identity.email;
+    if (acceptingEmail === null) {
+      return rejected("auth_email_mismatch", [setAuthCookie(params.accessToken), clearWorkspaceCookie()]);
+    }
+
     const preflight = await this.authDb.withWorkspace(workspaceId.data, (client) =>
       preflightLinkAuthUserToPerson(client, {
         workspaceId: workspaceId.data,
         personId: personId.data,
-        email: identity.email,
+        email: acceptingEmail,
+        caseInsensitiveEmail: params.requiredProvider === "google",
       }),
     );
     if ("rejected" in preflight) {
@@ -214,7 +304,12 @@ export class DashboardAuth {
       { type: "system", workspaceId: workspaceId.data },
       {
         name: "person.link_auth",
-        input: { person_id: personId.data, auth_user_id: identity.id, email: identity.email },
+        input: {
+          person_id: personId.data,
+          auth_user_id: identity.id,
+          email: acceptingEmail,
+          ...(params.requiredProvider === "google" ? { provider: "google" as const, email_verified: true } : {}),
+        },
         idempotencyKey: `person.link:${personId.data}:${identity.id}`,
       },
     );

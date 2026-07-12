@@ -15,6 +15,7 @@ export default async function LoginPage({
         <input id="email" name="email" type="email" autoComplete="email" required />
         <button type="submit">{t("auth.login.submit")}</button>
       </form>
+      <a href="/api/auth/google">{t("auth.login.google")}</a>
       {params.sent === "1" ? <p>{t("auth.login.sent")}</p> : null}
     </main>
   );
