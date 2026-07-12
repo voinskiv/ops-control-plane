@@ -42,7 +42,12 @@ export type RejectionCode =
   // DEC-009 Q5: client.archive refuses while any of its sites is not
   // archived (reject-while-sites-active, no cascade) — same tier as
   // last_owner_protected (SLICE-006), a typed domain-guard rejection.
-  | "client_has_active_sites";
+  | "client_has_active_sites"
+  // DEC-019: commitment lifecycle/domain guard rejections.
+  | "commitment_wrong_state"
+  | "commitment_patch_forbidden"
+  | "commitment_site_inactive"
+  | "commitment_has_open_windows";
 
 // §5: the HTTP surface returns {status, result, warnings}; the same envelope
 // is stored in action_invocations.result so a replay is byte-identical (F24).

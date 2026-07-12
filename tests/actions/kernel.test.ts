@@ -161,6 +161,21 @@ async function adminInsertSite(status: "draft" | "active" | "archived", clientId
   return siteId;
 }
 
+async function adminInsertCommitment(status: "draft" | "active" | "paused" | "completed" | "archived"): Promise<string> {
+  const commitmentId = randomUUID();
+  const commitmentSiteId = await adminInsertSite("active");
+  const client = await admin.query<{ client_id: string }>("SELECT client_id FROM sites WHERE id = $1", [commitmentSiteId]);
+  await admin.query(
+    `INSERT INTO commitments (id, workspace_id, client_id, site_id, type, title, spec,
+       schedule_rrule, target_qty, unit, verification, valid_from, valid_to, status)
+     VALUES ($1, $2, $3, $4, 'coverage', 'Property Commitment',
+       '{"window_start_time":"08:00","window_end_time":"16:00"}', 'FREQ=DAILY', 1,
+       NULL, '{"proof":{"required":false}}', '2026-07-13', '2026-12-31', $5)`,
+    [commitmentId, workspaceId, client.rows[0]?.client_id, commitmentSiteId, status],
+  );
+  return commitmentId;
+}
+
 registry.register({
   name: "test.client_create",
   actors: { minHumanRole: "manager", system: true },
@@ -374,7 +389,12 @@ describe("dispatch rejections (§20.1, §21.3)", () => {
       "client.archive",
       "client.create",
       "client.update",
+      "commitment.activate",
+      "commitment.archive",
+      "commitment.complete",
       "commitment.draft",
+      "commitment.pause",
+      "commitment.update_spec",
       "person.create",
       "person.deactivate",
       "person.invite",
@@ -831,6 +851,31 @@ describe("audit-per-executed-action property test (§20.3)", () => {
         valid_from: "2026-07-13",
         valid_to: "2026-12-31",
       }),
+      expected: "ok",
+    },
+    "commitment.update_spec": {
+      actor: manager,
+      input: async () => ({ commitment_id: await adminInsertCommitment("draft"), title: "Property Updated" }),
+      expected: "ok",
+    },
+    "commitment.activate": {
+      actor: manager,
+      input: async () => ({ commitment_id: await adminInsertCommitment("draft") }),
+      expected: "ok",
+    },
+    "commitment.pause": {
+      actor: manager,
+      input: async () => ({ commitment_id: await adminInsertCommitment("active"), reason: "Property test" }),
+      expected: "ok",
+    },
+    "commitment.complete": {
+      actor: manager,
+      input: async () => ({ commitment_id: await adminInsertCommitment("active"), reason: "Property test" }),
+      expected: "ok",
+    },
+    "commitment.archive": {
+      actor: manager,
+      input: async () => ({ commitment_id: await adminInsertCommitment("draft"), reason: "Property test" }),
       expected: "ok",
     },
   };

@@ -94,10 +94,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-003
       Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (186 tests), and production build green.
 
-- [ ] SLICE-013: Commitment state machine + commitment.* actions + manager forms
+- [x] SLICE-013: Commitment state machine + commitment.* actions + manager forms
       Architecture ref: §4 (Commitment), §5 catalog (commitment.*), §19 Phase 1
       Done when: draft→active→paused→completed→archived transitions execute only in core/domain (§21.8); archive blocked while any window is not closed (F23); auto-complete on valid_to runs as Y with nat key; update_spec affects only later-generated windows (A3); manager forms with rrule presets ship with complete German catalog; tests green
       Depends on: SLICE-007, SLICE-012
+      Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (225 tests), and production build green.
 
 - [ ] SLICE-014: Window generation + open — window state machine, cron, freeze
       Architecture ref: §4 (ExecutionWindow), §5 catalog (window.generate/open), §19 Phase 1
