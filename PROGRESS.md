@@ -8,6 +8,14 @@ only when the slice's PR is merged with its "Done when" criteria green in CI.
 §20 refs are the global acceptance criteria; per-phase applicability follows the F5
 map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
+## Product efficiency targets (operator-judged, not §20 CI gates)
+
+- **TTV:** invite sent to first verified capture < 1 hour assisted, < 1 day unassisted.
+- **Daily loop:** Heute board to capture-done ≤ 3 taps — a standing target already represented by the Phase 1 done-means.
+- **Automation index:** share of agent proposals approved-without-edit, from the Phase 4/5 promotion stats.
+
+These are operator-judged product numbers. They never gate CI or a slice's Done-when.
+
 ## Phase 0: Foundation
 
 - [x] SLICE-001: Repo scaffold, CI gates, i18n catalog skeleton
@@ -192,9 +200,9 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Done when: /s/{token} serves a read-only, session-free, rate-limited, noindex server-rendered page from the snapshot, metadata-first with no proof images (F34); 128-bit token stored hashed; optional PIN; expiry default 30 days; revoked/expired token → 404 live (§20.10); share.view op writes share.viewed audit events and bumps view_count/last_viewed_at (F7); tests green
       Depends on: SLICE-029
 
-- [ ] SLICE-033: Web-push spike (optional per §19 Phase 3)
-      Architecture ref: §14 (Phase 3 web push [FLEX]), §19 Phase 3
-      Done when: web-push channel adapter behind outbound_messages delivers an escalation notification to a supervisor PWA, or the spike outcome is recorded and deferred — explicitly optional, does not gate the phase
+- [ ] SLICE-033: Web push — supervisor escalation delivery
+      Architecture ref: §14 (committed Phase 3 web push), §19 Phase 3
+      Done when: the web-push channel adapter behind outbound_messages delivers an escalation notification to a supervisor's browser, verified on desktop Chrome and Android; iOS Safari push (requires the PWA added to the home screen) is verified and its constraint documented but does not gate the slice
       Depends on: SLICE-027
 
 ## Phase 4: Agents
@@ -220,8 +228,8 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Depends on: SLICE-024, SLICE-034
 
 - [ ] SLICE-038: Daily risk digest (system cron)
-      Architecture ref: §13 (job 3, F1, F25), §12 (digests never lock, never in client inbox)
-      Done when: morning system cron (actor_type=system) runs report.generate(type=digest, nat key workspace+date) over open exceptions, unstaffed windows, pending proofs, stale proposals, then notify.send(sensitive=false) referencing the snapshot (F25); digests lock no windows and skip the client report inbox; tests green
+      Architecture ref: §13 (job 3, F1, F25), §12 (digests never lock, never in client inbox), Appendix A (stale-draft digest threshold)
+      Done when: morning system cron (actor_type=system) runs report.generate(type=digest, nat key workspace+date) over open exceptions, unstaffed windows, pending proofs, stale proposals, and stale drafts older than the workspace-tunable Appendix A threshold, then notify.send(sensitive=false) referencing the snapshot (F25); digests lock no windows and skip the client report inbox; tests green
       Depends on: SLICE-027, SLICE-029, SLICE-034
 
 - [ ] SLICE-039: Attribution + policy.demote_action (auto-demotion)
@@ -255,6 +263,6 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
 - Appendix B kernel-internal ops have no phase assignment in ARCHITECTURE.md; after DEC-013 removes device.touch, the remaining operations are slotted here with their owning feature (person.link_auth → SLICE-008, proof.upload_failed → SLICE-019, message.delivery_update → SLICE-027, share.view → SLICE-032, report.complete → SLICE-029) — confirm this mapping.
 - The F19 Phase 4 action list names only proposal.*/policy.demote_action but its scope needs doc.upload and doc.extract_commitments (assumed in-phase, SLICE-036) — confirm the list is non-exhaustive. (Phase 2's equivalent gap — escalation.tick/acknowledge, notify.send — was resolved by DEC-001.)
-- Phase 0 "Actions: that set" for workspace/person/client/site is read as the full catalog set for those entities after DEC-013 removes device actions from v1, including person.pseudonymize (resolved by DEC-008) and site.activate (resolved by DEC-009: ships Phase 0, human_only, sole meter-moving event); DEC-008's auth_devices-revocation step remains a harmless no-op against the reserved empty table; site.archive stays deferred per DEC-008/DEC-009 — no phase assignment yet. DEC-009 also opens a new, unresolved carried-forward item: sites.status now includes a non-billable 'draft' state (site.create writes it) whose stale-draft handling, entitlement-metering treatment, and visibility rules are unspecified — a future slice must resolve this before it is built against.
+- Phase 0 "Actions: that set" for workspace/person/client/site is read as the full catalog set for those entities after DEC-013 removes device actions from v1, including person.pseudonymize (resolved by DEC-008) and site.activate (resolved by DEC-009: ships Phase 0, human_only, sole meter-moving event); DEC-008's auth_devices-revocation step remains a harmless no-op against the reserved empty table; site.archive stays deferred per DEC-008/DEC-009 — no phase assignment yet. DEC-009's carried-forward draft-site lifecycle item is RESOLVED by DEC-015: draft sites are non-billable, owner/manager-visible only, excluded from supervisor day-packs and client-facing surfaces, and surfaced after `workspaces.settings.stale_draft_site_days` through the Phase 4 daily digest without auto-expiry or destructive cleanup; when site.archive ships, it must accept draft as a from-state.
 - The window `open → missed` transition is part of the §4 window machine (Phase 1, SLICE-014 defines the machine) but its only trigger is the missed-window detector, which is Phase 2 scope; the transition is defined in Phase 1 and first exercised by SLICE-025 — confirm the split.
-- The Phase 3 web-push spike is marked optional in §19; SLICE-033 is included but flagged non-gating — confirm whether it is in v1 scope at all.
+- The Phase 3 web-push scope question is RESOLVED by DEC-015: SLICE-033 is a committed v1 deliverable; only the documented iOS Safari verification constraint is non-gating.
