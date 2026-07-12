@@ -939,6 +939,121 @@ scope for every session until resolved.
   amends PROGRESS.md with the product-efficiency-targets block, SLICE-033,
   SLICE-038, and Bootstrap ambiguities.
 
+### DEC-016 — 2026-07-12 — Phase 1 omnibus: capture/commitment/window/day-pack/outbox contracts (SLICE-012 → SLICE-021)
+- Status: RESOLVED
+- Raised by: Phase 1 pre-implementation ambiguity sweep (Fable,
+  architect/judge), commissioned by the operator to replace reactive
+  per-slice stops. No Phase 1 code written.
+- Question: Fourteen STOP-tier contracts across SLICE-012–021 are
+  underspecified in §3/§4/§5/§8/§10/§11 such that two reasonable implementers
+  would build observably different systems — action input schemas (exported
+  public API per §5), stored jsonb formats, state-machine edge transitions,
+  cached-read surfaces, and offline flush behavior. Full options and
+  consequences per item are in
+  `docs/reviews/phase1-ambiguity-sweep-2026-07-12.md` (findings F-01…F-31);
+  this entry records the question set and the approved resolutions.
+- Options considered: per finding, 2–3 options each with the consequence that
+  would make a reviewer pick it — see
+  `docs/reviews/phase1-ambiguity-sweep-2026-07-12.md` §2 (incorporated by
+  reference; the option lettering below matches it).
+- Resolution:
+  1. **F-01 → A.** spec jsonb carries `{window_start_time,
+     window_end_time}` (local wall-clock, workspace tz) plus per-type extras
+     (service_scope: checklist items); RRULE governs dates only; one window
+     per commitment per local date stands per the [FIXED] §5 nat key.
+  2. **F-02 → A.** Canonical shapes fixed for verification (proof demands),
+     requirements (frozen copy of verification + checklist, derived solely
+     from the commitment at generation), and fulfillment (`{rule,
+     target_qty, unit, aggregate, satisfied, counted_record_ids,
+     computed_at}`).
+  3. **F-03 → A.** Coverage headcount = max(max coverage_confirm qty,
+     distinct presence persons) over verified records — concurrency-safe,
+     never double-counts.
+  4. **F-04 → A.** service_scope completion = checklist-type proof
+     (`proofs.checklist jsonb`, per-item done flags against frozen keys) on a
+     service_confirmation record; service_scope shortfall raises exception
+     type `output_shortfall`.
+  5. **F-06 → A.** commitment.draft = flat 1:1 fields (DEC-008/009
+     precedent) with the per-type required/forbidden matrix as specified;
+     valid_from and valid_to remain required (schema unchanged); open-ended
+     commitments deferred to a future widening DEC on pilot evidence.
+  6. **F-07 → A.** commitment.update_spec = patch over {title, spec,
+     schedule_rrule, target_qty, unit, verification, valid_from (draft only),
+     valid_to}; type and site_id immutable; one contract for draft and active;
+     A3 governs active effect.
+  7. **F-10 → A.** window.generate gates on active commitments;
+     already-generated scheduled windows of paused/completed commitments
+     remain and run their course; no cancelled state in Phase 1; revisit on
+     Phase 2 detector-noise evidence.
+  8. **F-14 → A.** Day-pack schema fixed as specified: active sites in the
+     caller's F12 scope (managers: all active sites, F6), assigned-persons-only
+     roster (display_name + role_class), capture-namespace labels, empty-day
+     shapes, name/starts_at ordering. DEC-015 item 2 already resolves
+     draft-site visibility: drafts are owner/manager-only and never appear in
+     supervisor day-packs or client-facing surfaces. This active-site-only
+     day-pack schema is consistent with that resolved ruling; draft-site
+     visibility is not carried forward.
+  9. **F-16 → A.** record.capture per-kind required/forbidden matrix as
+     specified; output unit must equal the window's frozen unit (typed
+     rejection `unit_mismatch`).
+  10. **F-17 → A.** Authorizes one post-Phase-0 migration (per §19's
+      CHANGE-REQUEST route): additive nullable fact column
+      `execution_records.note text` under the F4 trigger set; required
+      (1–2000) for kind=note, forbidden otherwise.
+  11. **F-18 → A.** record events accepted on any window not in `closed`;
+      recompute may transition fulfilled↔shortfall and
+      missed→fulfilled/shortfall as system-triggered transitions added to the
+      §4 window machine before its Phase 1 freeze; `closed` rejects capture
+      with a typed code.
+  12. **F-22 → A.** window.close `counts?` = typed discriminated object per
+      type aggregate; mismatch → warning `counts_mismatch` per F20 (F20's
+      advisory ruling untouched).
+  13. **F-25 → A.** Supersede correction = capture field set minus
+      window_id/kind (inherited, immutable), fresh client_key, verified-only
+      targets.
+  14. **F-27 → A.** proof.attach carries client-computed content_hash of the
+      original blob (stored permanently as proofs.content_hash); result =
+      `{proof_id, upload: {url, method, headers, expires_at}}`;
+      complete_upload verifies, then re-encodes/strips (F34) and records the
+      stored-object hash in audit extras.
+  15. **F-29 → A.** assignment.set = idempotent upsert to planned
+      (removed→planned revival), unique (window_id, person_id); role column =
+      role_class snapshot, not an input; targets = active in-workspace
+      persons; A1 (assignments never authorize) restated in the slice
+      contract.
+  16. **F-30 → A.** Flush: per-device FIFO dispatch; network failure retries
+      in place; error status retries bounded then parks; typed rejections park
+      to a visible failed list (catalog-translated reason) and flushing
+      continues; parked items discardable only by explicit user action.
+  17. **F-31 → A.** Outbox partitioned by (auth_user_id, workspace_id); only
+      a matching live session flushes a partition; refresh failure leaves
+      items queued behind a re-login banner; other identities' partitions are
+      inert and never auto-flushed or auto-purged.
+  18. The 20 implementation-detail findings (sweep §3) are confirmed as
+      smallest-safe rules; implementing agents apply them without
+      re-derivation and log them as DECISIONS.md one-liners per AGENTS.md
+      AMBIGUITY.
+- Why this needs human sign-off: items 1–2, 4–6, 9–10, 12–15 fix stored data
+  formats and the exported public API/MCP surface; items 3, 11 fix fulfillment
+  computation and state-machine transitions on the billing-grade trail; item
+  8 fixes a cached who-can-see-what read surface; items 16–17 fix visible
+  offline behavior and audit attribution. PRODUCT, DOMAIN, ACTION kernel,
+  AUDIT, PRIVACY/PII, and SECURITY/AUTHZ categories from the AGENTS.md STOP
+  list are all touched; none qualifies as an implementation detail.
+- Approved by: Vitali Voinski (operator), 2026-07-12; proposal authored by the architect (Fable), transcribed by the implementing agent.
+- Architecture impact: amends §3 (`execution_records` gains `note text?` —
+  the migration rides the SLICE-016 implementation PR, not this doc-PR; jsonb
+  shapes for `commitments.verification`, `execution_windows.requirements`,
+  and `execution_windows.fulfillment` documented); amends §4 (window machine
+  gains system recompute transitions fulfilled↔shortfall and
+  missed→fulfilled/shortfall); amends §5 (`commitment.draft`,
+  `commitment.update_spec`, `record.capture`, `window.close`,
+  `record.supersede`, `proof.attach`, and `assignment.set` input rows
+  concretized to the exact contracts above); annotates §8/§10/§11 (day-pack
+  schema, outbox failure/partition semantics). DEC-015 item 2 already resolves
+  draft-site visibility; item 8 is consistent with it and carries nothing
+  forward. PROGRESS.md is unchanged.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")

@@ -3,6 +3,16 @@ binding source of truth. Treat it as read-only. Never edit it. Amendments
 (including syncing a DECISIONS.md entry back into it) are applied by the human
 only — you never edit ARCHITECTURE.md, even to reconcile it with a decision.
 
+Exception — approved-decision doc-PRs: an agent may apply the
+amendment diffs of a decision whose Status is RESOLVED with a named
+operator approval to ARCHITECTURE.md and PROGRESS.md, strictly
+verbatim, on a dedicated docs/ branch, in a PR that quotes this rule
+and maps every hunk to its decision item. The operator's merge of
+that PR constitutes the human application. Any deviation from the
+approved diffs, however small, voids this exception for that PR.
+Editing this file (AGENTS.md) remains outside the exception and
+requires an explicit per-instance operator grant.
+
 SCOPE
 - Build only what ARCHITECTURE.md defines. Do not add features, endpoints,
   abstractions, generalizations of specified behavior (optional parameters,
