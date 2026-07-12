@@ -11,7 +11,7 @@ git clone https://github.com/voinskiv/ops-control-plane.git
 cd ops-control-plane
 npm ci
 
-npx supabase start --workdir db
+npx supabase start --workdir db --exclude edge-runtime,imgproxy,realtime,studio,vector
 npx supabase status --workdir db -o env > .env.supabase.local
 set -a
 . ./.env.supabase.local
@@ -31,6 +31,6 @@ npm run lint
 npm test
 ```
 
-The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000` but is made explicit above. `TEST_DATABASE_URL` makes the full SQL suite verify the same empty-then-migrated local Supabase database. The local CLI output supplies every secret value.
+The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000` but is made explicit above. `TEST_DATABASE_URL` makes the full SQL suite verify the same empty-then-migrated local Supabase database. The local CLI output supplies every secret value. The excluded services are not used in Phase 0; Postgres, Auth, API/Kong, metadata, mail, and Storage remain available.
 
 The Phase 0 seed creates Demo GmbH through kernel replay only. It creates an owner, a manager, two supervisors, six display-name-only workers, two clients, and four sites; three sites are active and one remains draft. Seeded people are unlinked (`auth_user_id` remains `NULL`), and no credentials, commitments, windows, or records are created. Commitment/window fixtures are deferred to SLICE-014A (Phase 1).
