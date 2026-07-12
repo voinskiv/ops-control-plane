@@ -788,6 +788,157 @@ scope for every session until resolved.
 - Architecture impact: concretizes §16/§19 and DEC-013 items 3, 7, and
   13 at implementation level; no ARCHITECTURE.md text amendment required.
 
+### DEC-015 — 2026-07-12 — Plan adjustments — web push committed, draft-site lifecycle resolved, audit-derived analytics ruling, product efficiency targets
+- Status: RESOLVED
+- Raised by: operator planning review after SLICE-009 (PR #21) merge.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: Should the v1 plan adopt all four independent planning
+    rulings below: commit web push in Phase 3; close DEC-009's carried-forward
+    draft-site lifecycle item; constrain future product and operational
+    analytics to `audit_events` plus relational current state; and record
+    operator-judged product efficiency targets outside CI and slice Done-when
+    gates?
+  - Architecture section(s) involved: §3 sites lifecycle; §6 audit/event
+    strategy; §8 role and surface visibility; §9 active-site metering; §12
+    digest behavior; §13 daily digest and promotion statistics; §14 channel
+    architecture; §18 deferred upgrade paths; §19 Phase 3 and Phase 4;
+    Appendix A; DEC-008; DEC-009; PROGRESS.md SLICE-033, SLICE-038,
+    Bootstrap ambiguities, and the product-efficiency-targets block.
+  - Options considered:
+
+    **(1) Web push committed**
+
+    - (A) Commit web push as a Phase 3 deliverable. The web-push channel
+      adapter behind `outbound_messages` must deliver an escalation
+      notification to a supervisor's browser, verified on desktop Chrome and
+      Android. iOS Safari push, which requires the PWA to be added to the home
+      screen, is verified and the constraint documented, but that verification
+      does not gate the slice. A reviewer picks this because, after DEC-013
+      removed device authentication and native applications remained deferred,
+      the browser is the supervisor's terminal; email as the only immediate
+      escalation channel is insufficient for frontline urgency.
+    - (B) Retain the optional Phase 3 spike. A reviewer picks this to permit
+      deferral if browser-push delivery or operations prove too costly;
+      consequence: Phase 3 may close with email as the only immediate external
+      escalation channel.
+    - (C) Defer web push entirely until measured pilot failure of email. A
+      reviewer picks this to minimize Phase 3 scope; consequence: no v1 browser
+      escalation channel is committed despite DEC-013's browser-first strategy.
+
+    **(2) Draft-site lifecycle — DEC-009 carried-forward item**
+
+    - Metering: (A) draft sites never count toward §9's active-site meter;
+      `draft` is non-billable by definition. (B) Draft sites count toward the
+      active-site meter, causing `site.create` to move the billing outcome even
+      though DEC-009 made `site.activate` the sole meter-moving event. (C)
+      Drafts count against a separate plan limit, introducing a new entitlement
+      dimension.
+    - Visibility: (A) draft sites are visible only on owner/manager surfaces;
+      they never appear in supervisor day-packs or client-facing surfaces, and
+      `supervisor_person_ids` on a draft site confers no visibility or
+      authorization until activation. (B) Draft sites appear to assigned
+      supervisors but not clients, granting pre-activation visibility. (C)
+      Draft sites follow active-site visibility everywhere, exposing incomplete
+      setup data.
+    - Stale handling: (A) no auto-expiry or destructive cron exists; the Phase
+      4 daily digest gains a stale-drafts line for drafts older than the
+      workspace-tunable `workspaces.settings.stale_draft_site_days`, default 30
+      days. (B) Automatically archive stale drafts, requiring an undefined
+      lifecycle action and authorization contract. (C) Automatically delete
+      stale drafts, violating §3's no-hard-delete ruling. (D) Retain stale
+      drafts silently with no operational signal.
+    - Future archive transition: (A) keep `site.archive` deferred per DEC-008
+      and DEC-009; when it ships it must accept `draft` as a from-state. (B)
+      Allow archive only from `active`, leaving drafts unable to exit without
+      activation. (C) Pull `site.archive` forward now, changing its expressly
+      deferred phase and implementation scope.
+
+    **(3) Audit-derived analytics ruling**
+
+    - (A) Product and operational metrics derive exclusively from
+      `audit_events` and relational current state through `core/reads`; no
+      separate analytics store, event pipeline, or third-party product-
+      telemetry system exists in v1. A future metrics read for exception MTTR,
+      capture latency, and automation index is one read over `audit_events`, a
+      candidate for Phase 6.
+    - (B) Add a separate first-party analytics store or event pipeline, gaining
+      analytics-specific aggregation at the cost of another data path,
+      consistency model, privacy surface, and operational system.
+    - (C) Add third-party product telemetry, gaining packaged funnels while
+      exporting operational and user behavior into new tenancy, privacy, and
+      consent obligations.
+    - (D) Make no ruling until metrics are implemented, leaving later slices
+      free to introduce incompatible telemetry paths.
+
+    **(4) Product efficiency targets**
+
+    - (A) Add a PROGRESS.md block explicitly labeled operator-judged, not §20
+      CI gates: TTV from invite sent to first verified capture is <1 hour
+      assisted and <1 day unassisted; the daily loop from Heute board to
+      capture-done is ≤3 taps; automation index is the share of agent proposals
+      approved without edit from Phase 4/5 promotion statistics. These numbers
+      never gate CI or a slice's Done-when.
+    - (B) Make the targets §20 CI or slice Done-when gates, converting assisted
+      elapsed time and operator-observed outcomes into brittle/non-reproducible
+      CI conditions.
+    - (C) Keep the targets outside repository governance, leaving no durable,
+      reviewable record of product-efficiency outcomes.
+    - (D) Omit numerical targets while measurement is immature, leaving no
+      shared success threshold.
+
+  - Smallest-safe default (if allowed to proceed): none — hard blocked for any
+    answer-dependent work. Until operator approval, retain the current optional
+    web-push text; do not assume draft metering, visibility, stale handling, or
+    archive transitions; build no metrics or telemetry path; and do not use the
+    proposed efficiency targets as gates.
+  - Why this needs human sign-off: items (1), (2), and (4) change PRODUCT
+    behavior and phase/slice commitments. Item (2) also changes the §9 billing
+    meter and SECURITY/AUTHZ visibility: the wrong default could bill a
+    customer for incomplete setup state or expose incomplete sites before
+    activation. Item (3) constrains the AUDIT model, TENANCY, and PRIVACY/PII
+    surface: the wrong choice could create a second event truth or export
+    tenant/user behavior to an unapproved telemetry system. These categories
+    are on AGENTS.md's mandatory-stop list.
+- Resolution:
+  1. Web push is a committed Phase 3 deliverable. The web-push channel adapter
+     behind `outbound_messages` delivers an escalation notification to a
+     supervisor's browser, verified on desktop Chrome and Android. iOS Safari
+     push is also verified with its PWA-home-screen requirement documented, but
+     that verification does not gate the slice. With device auth removed by
+     DEC-013 and native deferred, the browser is the supervisor's terminal;
+     email alone is insufficient for frontline escalation urgency.
+  2. DEC-009's carried-forward draft-site lifecycle item is resolved. Sites in
+     `draft` never count toward §9's active-site meter and are non-billable by
+     definition. Draft sites are visible only to owner/manager surfaces; they
+     never appear in supervisor day-packs or client-facing surfaces, and
+     `supervisor_person_ids` on a draft site confers no visibility or
+     authorization until activation. No auto-expiry or destructive cron exists
+     for stale drafts. The Phase 4 daily digest includes drafts older than
+     `workspaces.settings.stale_draft_site_days`, whose workspace-tunable
+     default is 30 days. `site.archive` remains deferred per DEC-008/DEC-009;
+     when it ships it must accept `draft` as a from-state. This doc-PR also
+     applies DEC-009's previously approved but unapplied §3 impact by changing
+     the site states to `draft`, `active`, `archived`.
+  3. Product and operational metrics derive exclusively from `audit_events`
+     and relational current state via `core/reads`; no separate analytics
+     store, event pipeline, or third-party product-telemetry system exists in
+     v1. A metrics read for exception MTTR, capture latency, and automation
+     index is one new read over `audit_events`, candidate Phase 6. Nothing is
+     built by this ruling.
+  4. PROGRESS.md records operator-judged product efficiency targets: invite
+     sent to first verified capture <1 hour assisted and <1 day unassisted;
+     Heute board to capture-done ≤3 taps; and automation index as the share of
+     agent proposals approved without edit from Phase 4/5 promotion stats.
+     These are operator-judged product numbers and never gate CI or a slice's
+     Done-when.
+- Approved by: Vitali Voinski (operator), 2026-07-12; proposal authored by the
+  drafting agent, transcribed by the implementing agent.
+- Architecture impact: amends §3, §6, §8, §9, §13, §14, §18, §19 Phase 3,
+  and Appendix A; closes DEC-009's carried-forward draft-site lifecycle item;
+  amends PROGRESS.md with the product-efficiency-targets block, SLICE-033,
+  SLICE-038, and Bootstrap ambiguities.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
@@ -826,3 +977,5 @@ scope for every session until resolved.
 - 2026-07-08 SLICE-007: `site.archive` is registered per catalog (§21.2 exact-match) but its `execute()` deliberately throws — reuses the kernel's existing generic error path (`status="error"`, `internal_error` catalog string, no mutation, no audit event, replay-stable) already exercised by `test.fail_after_write`; no new RejectionCode was added for the deferral itself, since `RejectionCode` is a closed, catalog-declared, user-visible set (AGENTS.md STOP list) and this reuses what already exists.
 - 2026-07-11 SLICE-008 residual R1: `person.invite` audit extras extend to `{auth_invite_id, invited_email}`; `person.link_auth` binds to the newest such record and fails closed for legacy invite audits without `invited_email`, requiring a re-invite.
 - 2026-07-11 pre-freeze residual race fix: client/site raw `FOR UPDATE` helpers live in `core/db/clients.ts`, matching the existing `core/db/persons.ts` `lockWorkspaceForOwnerGuard` boundary while preserving behavior.
+- 2026-07-12 SLICE-009 review: the `/dashboard` typed 403 relies on Next `experimental.authInterrupts` (`next.config.ts`); verify the rejection contract (rendered catalog page, HTTP 403) on every Next.js upgrade until the flag is stable.
+- 2026-07-12 SLICE-009 review: auth cookies are `SameSite=Lax` deliberately — `Strict` would drop the session cookie on the Google OAuth redirect and break provider login; do not harden without a DEC.
