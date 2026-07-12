@@ -60,19 +60,19 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Status: residual R1 invite-linking hardening completed 2026-07-11; accepting identity now binds to the invite-issued email (DEC-012).
       Status: merged 2026-07-11 (PR #13 + PR #15 follow-up), Done-when green in CI.
 
-- [ ] SLICE-009: Device auth — enroll / claim / revoke, PIN, device.touch
-      Architecture ref: §5 catalog (device.*), §16, F17, Appendix B (device.touch)
-      Done when: device.enroll issues single-use QR / 8-digit code expiring in 15 min; device.claim runs through the kernel as actor_type=system with code-possession + rate limit replacing authorize (F17); token/PIN stored only as hashes, token held in httpOnly cookie; device.revoke immediate; device.touch kernel-internal op updates last_seen_at idempotently; claim-flow test green (§21.10)
-      Depends on: SLICE-006
+- [ ] SLICE-009: Supervisor Supabase auth — invite extension, Google OAuth, capture routing
+      Architecture ref: §5 catalog (person.invite), §7, §8, §16, DEC-010, DEC-011, DEC-012, DEC-013
+      Done when: person.invite accepts active unlinked persons with role_class in {owner, manager, supervisor} while preserving invited-email binding and re-invite semantics; an invited supervisor completes magic-link and Google acceptance, with Google requiring a provider-verified email equal case-normalized to the invited email; the supervisor lands on the (capture) shell and (dashboard) routes return a typed, catalog-translated rejection; every request re-resolves the active person, workspace, and role so deactivation or role change takes effect on the next request; DEC-011's membership function is widened by the DEC-013-authorized migration without changing its RLS or return-field contract; the registry contains no device.enroll/device.claim/device.revoke and Appendix B contains no device.touch; §21.2 exact-match is green
+      Depends on: SLICE-006, SLICE-008
 
 - [ ] SLICE-010: Read layer mount + `me` read
       Architecture ref: §5 (reads, F29), §19 Phase 0 done-means
-      Done when: GET /api/reads/:name mounts core/reads; the `me` read (empty day-pack shell) returns after a simulated device claim (Phase 0 agent-verifiable done)
+      Done when: GET /api/reads/:name mounts core/reads; the `me` read (empty day-pack shell) returns for an authenticated supervisor session after per-request role/workspace revalidation
       Depends on: SLICE-003, SLICE-008, SLICE-009
 
-- [ ] SLICE-011: Seed fixture "Demo GmbH" (workspace/persons/clients/sites/devices) via kernel replay + fresh-clone command chain
+- [ ] SLICE-011: Seed fixture "Demo GmbH" (workspace/persons/clients/sites) via kernel replay + fresh-clone command chain
       Architecture ref: §19 (db/seed, Touch rules seed ruling, DEC-004), §20.12
-      Done when: fresh clone → migrations on empty db → seed replays kernel action invocations (workspace.create, person.create, client.create, site.create, device.enroll/claim) with deterministic idempotency keys — no direct SQL — → typecheck + lint + tests green via one documented command chain (§20.12); commitment/window fixtures are explicitly deferred to SLICE-014A (Phase 1); Phase 0 CI gates §20 1–7, 12 all green
+      Done when: fresh clone → migrations on empty db → seed replays kernel action invocations (workspace.create, person.create, client.create, site.create) with deterministic idempotency keys — no direct SQL — → typecheck + lint + tests green via one documented command chain (§20.12); Phase 0 auth integration is proven by SLICE-009's invited-supervisor acceptance tests rather than seeded device credentials; commitment/window fixtures are explicitly deferred to SLICE-014A (Phase 1); Phase 0 CI gates §20 1–7, 12 all green
       Depends on: SLICE-001 through SLICE-010 (phase integration slice)
 
 ## Phase 1: Board + capture live
@@ -97,14 +97,14 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
       Done when: the seed script extends Demo GmbH by replaying commitment.draft + commitment.activate for the fixture commitments and invoking window.generate for the rolling horizon, all as kernel action invocations with deterministic idempotency keys — no direct SQL; re-running the seed is a no-op (idempotent replay); this slice fulfills the Phase 1 done-means "tomorrow's board auto-generates in the seed" (moved here from SLICE-014 to avoid a circular dependency)
       Depends on: SLICE-011, SLICE-013, SLICE-014
 
-- [ ] SLICE-015: Day-pack read + Heute board (PWA shell)
+- [ ] SLICE-015: Day-pack read + browser-first Heute board
       Architecture ref: §10, §11 (day-pack read), §8 (supervisor site scope, F12), §7 (60 s poll)
-      Done when: day-pack read returns windows/assignments/persons/labels for exactly the sites in sites.settings.supervisor_person_ids (F12); Heute board renders grouped by site with frozen target + live status, polling 60 s + on focus; PWA manifest + service worker present (§21.12); German catalog complete for the surface
+      Done when: day-pack read returns windows/assignments/persons/labels for exactly the sites in sites.settings.supervisor_person_ids (F12); Heute board renders grouped by site with frozen target + live status, polling 60 s + on focus; PWA manifest + service worker present while installation remains optional (§21.12); cached day-pack rendering does not require a live token; German catalog complete for the surface
       Depends on: SLICE-009, SLICE-010, SLICE-014
 
 - [ ] SLICE-016: record.capture end-to-end + capture controls + fulfillment
       Architecture ref: §4 (ExecutionRecord, F32), §5 catalog (record.capture/verify), §10, §11
-      Done when: record.capture (kinds presence, coverage_confirm, output, service_confirmation, note) writes verified rows auto-verified in one audit event with device_id + clock-skew extras (F32), client_key as idempotency key; record.verify registered but unused by capture UI (F32); fulfillment recomputed on every verify/void/supersede; per-type capture controls (headcount, tap-list, stepper, checklist) ship; fulfillment unit tests per type definition green
+      Done when: record.capture (kinds presence, coverage_confirm, output, service_confirmation, note) writes verified rows auto-verified in one audit event with device_id reserved/NULL in v1 plus clock-skew extras (F32), client_key as idempotency key; no substitute client-instance identifier is introduced; record.verify registered but unused by capture UI (F32); fulfillment recomputed on every verify/void/supersede; per-type capture controls (headcount, tap-list, stepper, checklist) ship; fulfillment unit tests per type definition green
       Depends on: SLICE-012, SLICE-015
 
 - [ ] SLICE-017: window.close / reconcile / reopen
@@ -129,7 +129,7 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
 - [ ] SLICE-021: Offline outbox + batch confirm + Phase 1 e2e
       Architecture ref: §11, §10 (batch confirm), §19 Phase 1 done-means, §20.8
-      Done when: IndexedDB outbox queues invocations (payload + idempotency key + occurred_at), flushes FIFO on reconnect/background sync; e2e records a window airplane-mode offline→synced in ≤3 taps from the Heute board; zero duplicate records under forced retry (§20.8); batch confirm per site works; German catalog complete for all Phase 1 surfaces; §20 1–8, 11, 12 green
+      Done when: IndexedDB outbox queues invocations (payload + idempotency key + occurred_at); on reconnect/background sync the client refreshes the Supabase session and completes per-request person/role/workspace validation before flushing FIFO; e2e records a window airplane-mode offline→synced in ≤3 taps from the Heute board; zero duplicate records under forced retry (§20.8); batch confirm per site works; German catalog complete for all Phase 1 surfaces; §20 1–8, 11, 12 green
       Depends on: SLICE-016, SLICE-017, SLICE-019
 
 ## Phase 2: Exceptions / escalation / recovery
@@ -247,13 +247,13 @@ map (P0 → 1–7, 12; P1/P2 → 1–8, 11, 12; P3 → +10; P4/P5 → 1–12).
 
 - [ ] SLICE-043: Hardening — rate limits, error/empty states, ops runbook
       Architecture ref: §19 Phase 5, §16 (application security)
-      Done when: rate limits on /s/*, device.claim, PIN attempts verified; CSP + CRON_SECRET checks confirmed; error/empty states across surfaces; ops runbook written; full §20 1–12 green (phase closes v1)
+      Done when: rate limits on /s/* and authentication endpoints verified; CSP + CRON_SECRET checks confirmed; error/empty states across surfaces; ops runbook written; full §20 1–12 green (phase closes v1)
       Depends on: SLICE-040, SLICE-041, SLICE-042 (final integration slice)
 
 ## Bootstrap ambiguities
 
-- Appendix B kernel-internal ops have no phase assignment in ARCHITECTURE.md; they are slotted here with their owning feature (device.touch → SLICE-009, proof.upload_failed → SLICE-019, message.delivery_update → SLICE-027, share.view → SLICE-032, report.complete → SLICE-029) — confirm this mapping.
+- Appendix B kernel-internal ops have no phase assignment in ARCHITECTURE.md; after DEC-013 removes device.touch, the remaining operations are slotted here with their owning feature (person.link_auth → SLICE-008, proof.upload_failed → SLICE-019, message.delivery_update → SLICE-027, share.view → SLICE-032, report.complete → SLICE-029) — confirm this mapping.
 - The F19 Phase 4 action list names only proposal.*/policy.demote_action but its scope needs doc.upload and doc.extract_commitments (assumed in-phase, SLICE-036) — confirm the list is non-exhaustive. (Phase 2's equivalent gap — escalation.tick/acknowledge, notify.send — was resolved by DEC-001.)
-- Phase 0 "Actions: that set" for workspace/person/client/site/device is read as the full catalog set for those entities, including person.pseudonymize (resolved RESOLVED by DEC-008) and site.activate (resolved RESOLVED by DEC-009: ships Phase 0, human_only, sole meter-moving event); site.archive stays deferred per DEC-008/DEC-009 — no phase assignment yet. DEC-009 also opens a new, unresolved carried-forward item: sites.status now includes a non-billable 'draft' state (site.create writes it) whose stale-draft handling, entitlement-metering treatment, and visibility rules are unspecified — a future slice must resolve this before it is built against.
+- Phase 0 "Actions: that set" for workspace/person/client/site is read as the full catalog set for those entities after DEC-013 removes device actions from v1, including person.pseudonymize (resolved by DEC-008) and site.activate (resolved by DEC-009: ships Phase 0, human_only, sole meter-moving event); DEC-008's auth_devices-revocation step remains a harmless no-op against the reserved empty table; site.archive stays deferred per DEC-008/DEC-009 — no phase assignment yet. DEC-009 also opens a new, unresolved carried-forward item: sites.status now includes a non-billable 'draft' state (site.create writes it) whose stale-draft handling, entitlement-metering treatment, and visibility rules are unspecified — a future slice must resolve this before it is built against.
 - The window `open → missed` transition is part of the §4 window machine (Phase 1, SLICE-014 defines the machine) but its only trigger is the missed-window detector, which is Phase 2 scope; the transition is defined in Phase 1 and first exercised by SLICE-025 — confirm the split.
 - The Phase 3 web-push spike is marked optional in §19; SLICE-033 is included but flagged non-gating — confirm whether it is in v1 scope at all.
