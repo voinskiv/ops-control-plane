@@ -1058,6 +1058,8 @@ scope for every session until resolved.
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-12 SLICE-010 (DEC-016 F-15): `labels` flattens the root `capture` catalog namespace; the Phase 0 shell contains its current `title` key only, selects `en` only for an English person locale, and falls back to `de` otherwise.
+- 2026-07-12 SLICE-010: the build-time read schema surface is the statically exported `readJsonSchemas` registry projection produced by Zod 4 from every definition's params and response schemas; no generated file or new dependency is needed.
 - 2026-07-12 SLICE-009: Google invite state uses an httpOnly SameSite=Lax `ocp_google_invite_state` cookie containing a random nonce plus the bound workspace/person ids; Next `authInterrupts` renders the typed dashboard HTTP 403; authenticated role-router/surface pages are forced dynamic.
 - 2026-07-05 SLICE-001: test runner = Vitest; the de.json completeness check is a Vitest test (tests/i18n.test.ts) so it wires into CI without a stray top-level scripts/ dir (§21.1).
 - 2026-07-05 SLICE-001: internal core package aliased as `@core/*` (tsconfig paths); package manager = npm with committed lockfile; CI runs on Node 24 (LTS), matching the npm major that generates the lockfile.

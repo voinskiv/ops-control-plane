@@ -34,7 +34,13 @@
       "supervisor": "Supervisor"
     }
   },
+  "capture": {
+    "title": "Erfassung"
+  },
   "errors": {
+    "read": {
+      "unknown_read": "Unbekannter Lesezugriff."
+    },
     "action": {
       "unknown_action": "Unbekannte Aktion.",
       "unauthenticated": "Nicht angemeldet.",

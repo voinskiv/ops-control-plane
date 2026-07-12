@@ -74,10 +74,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-006, SLICE-008
       Status: draft PR #21 opened 2026-07-12; local typecheck, lint, full suite (131 tests), and production build green.
 
-- [ ] SLICE-010: Read layer mount + `me` read
+- [x] SLICE-010: Read layer mount + `me` read
       Architecture ref: §5 (reads, F29), §19 Phase 0 done-means
       Done when: GET /api/reads/:name mounts core/reads; the `me` read (empty day-pack shell) returns for an authenticated supervisor session after per-request role/workspace revalidation
       Depends on: SLICE-003, SLICE-008, SLICE-009
+      Status: merge-ready 2026-07-12; local typecheck, lint, i18n completeness, full suite (139 tests), and production build green.
 
 - [ ] SLICE-011: Seed fixture "Demo GmbH" (workspace/persons/clients/sites) via kernel replay + fresh-clone command chain
       Architecture ref: §19 (db/seed, Touch rules seed ruling, DEC-004), §20.12

@@ -34,7 +34,13 @@
       "supervisor": "Supervisor"
     }
   },
+  "capture": {
+    "title": "Capture"
+  },
   "errors": {
+    "read": {
+      "unknown_read": "Unknown read."
+    },
     "action": {
       "unknown_action": "Unknown action.",
       "unauthenticated": "Not signed in.",

@@ -49,6 +49,7 @@ export interface CurrentSession {
 export interface ActorResolution {
   actor: Actor | null;
   membership?: DashboardMembership;
+  rejection?: Extract<RejectionCode, "unauthenticated" | "no_dashboard_membership">;
   cookies: CookieChange[];
 }
 
@@ -322,21 +323,29 @@ export class DashboardAuth {
   async resolveActor(cookieHeaderValue: string | null): Promise<ActorResolution> {
     const cookies = parseCookieHeader(cookieHeaderValue);
     if (cookies.accessToken === null || cookies.workspaceId === null) {
-      return { actor: null, cookies: [] };
+      return { actor: null, rejection: "unauthenticated", cookies: [] };
     }
     const identity = await identityFromToken(cookies.accessToken);
     if (identity === null) {
-      return { actor: null, cookies: [clearAuthCookie(), clearWorkspaceCookie()] };
+      return {
+        actor: null,
+        rejection: "unauthenticated",
+        cookies: [clearAuthCookie(), clearWorkspaceCookie()],
+      };
     }
     const workspaceId = workspaceIdInput.safeParse(cookies.workspaceId);
     if (!workspaceId.success) {
-      return { actor: null, cookies: [clearWorkspaceCookie()] };
+      return { actor: null, rejection: "unauthenticated", cookies: [clearWorkspaceCookie()] };
     }
     const membership = await this.authDb.withWorkspace(workspaceId.data, (client) =>
       dashboardMembershipByWorkspace(client, identity.id, workspaceId.data),
     );
     if (membership === null) {
-      return { actor: null, cookies: [clearWorkspaceCookie()] };
+      return {
+        actor: null,
+        rejection: "no_dashboard_membership",
+        cookies: [clearWorkspaceCookie()],
+      };
     }
     return { actor: actorForMembership(membership), membership, cookies: [] };
   }
