@@ -1054,10 +1054,106 @@ scope for every session until resolved.
   draft-site visibility; item 8 is consistent with it and carries nothing
   forward. PROGRESS.md is unchanged.
 
+### DEC-017 — 2026-07-12 — SLICE-012 verification defaults and service-scope latest-record ordering
+
+- Status: RESOLVED
+- Raised by: SLICE-012 implementation preflight; no SLICE-012 code written.
+- Question: DEC-016 and amended §3 fix the verification JSON shape and make
+  `commitment.draft.verification` optional with a per-type default, but do not
+  specify the default proof demand for coverage, output, or service_scope.
+  Amended §3 also makes service_scope fulfillment depend on the latest
+  verified service_confirmation proof without defining the ordering or a
+  deterministic tie-breaker. What exact defaults and ordering apply?
+- Options considered:
+  1. Default every type to `{proof: {required: false, types: [], min_count:
+     0}}`; choose the latest service_confirmation by `occurred_at`, then
+     `received_at`, then record id. Pick this for least proof friction and
+     event-time semantics, accepting that delayed/offline facts can replace a
+     more recently received checklist.
+  2. Require one photo by default for every type; choose the latest by
+     `received_at`, then record id. Pick this for uniform evidentiary strength
+     and server-observed ordering, accepting proof/upload work for coverage
+     and output and that sync order decides service completion.
+  3. Specify distinct proof defaults per type (including the exact
+     required/types/min_count tuple for each); choose the latest by immutable
+     record creation/receipt order with a named deterministic tie-breaker.
+     Pick this when the three operational promises require different evidence
+     policies and server arrival order should govern corrections.
+  4. Specify distinct proof defaults per type; choose the latest by
+     `occurred_at` with a named deterministic tie-breaker. Pick this when event
+     time should govern despite offline arrival order.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: DOMAIN behavior and stored-format semantics
+  are affected. The default is persisted in `commitments.verification` and
+  later frozen into window requirements; choosing it incorrectly either
+  permits fulfillment without intended evidence or imposes unapproved proof
+  collection. The ordering choice can make the same immutable checklist facts
+  produce opposite fulfillment results, affecting shortfall state and the
+  billing-grade audit trail.
+- Resolution:
+  1. Default verification tuple: for all three commitment types, proof
+     is not required by default — the canonical verification shape
+     defaults to proof.required=false with no kind/min_count; any
+     proof requirement must be stated explicitly in commitment.draft
+     input. service_scope's checklist completion remains its intrinsic
+     verification core (DEC-016 item 4); proof gating is opt-in for it
+     exactly as for coverage and output.
+  2. "Latest verified" service confirmation ordering: total order over
+     verified, non-superseded, non-voided records only (DEC-016 item
+     2), by occurred_at DESC, tie-broken by received_at DESC, then id
+     DESC (UUIDv7 creation order). Domain time governs; transport
+     arrival never decides fulfillment. Encode this comparator once in
+     core/domain and reuse it in every consumer (SLICE-016/017) —
+     never re-derive per call site.
+- Architecture impact: concretizes DEC-016 items 2/4/5 at
+  implementation level; no ARCHITECTURE.md text amendment; the
+  comparator location is an implementation contract recorded here.
+- Approved by: Vitali Voinski (operator), 2026-07-13; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
+
+### DEC-018 — 2026-07-13 — SLICE-012 commitment type-definition audit version format
+
+- Status: RESOLVED
+- Raised by: SLICE-012 implementation preflight after DEC-017 resolution; no
+  SLICE-012 implementation code written.
+- Question: §5 requires the `commitment.draft` audit extras to carry the
+  "type-def version", but does not fix the logged field name or value shape.
+  What exact append-only audit-extras representation is required?
+- Options considered:
+  1. `{type_definition_version: 1}`. Pick this for the smallest scalar format;
+     the commitment type is already present in the audited full-row `after`
+     value, so duplicating it in extras is unnecessary.
+  2. `{type_definition: {type: "coverage"|"output"|"service_scope", version:
+     1}}`. Pick this for a self-contained audit extra that can be interpreted
+     without joining or inspecting the `after` row, accepting duplicated type
+     data.
+  3. `{type_definition_version: "coverage@1"|"output@1"|"service_scope@1"}`.
+     Pick this for one portable registry identifier, accepting a string
+     encoding that consumers must parse.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: AUDIT model and logged fields are affected.
+  Audit events are append-only and later report/reconstruction consumers must
+  read one stable representation; choosing the wrong shape creates permanent
+  incompatible history that cannot be rewritten under §6.
+- Resolution:
+  1. The §5 type-def-version audit extra is
+     `{type_definition: {type: <commitment type>, version: <integer>}}`.
+     All three definitions ship at version 1. A version bump requires
+     a DEC (definition changes alter fulfillment semantics on the
+     audit trail).
+  2. Standing convention for this and future audit extras: structured
+     snake_case objects, never packed strings requiring parsing. Where
+     an extras question only names/shapes information already fully
+     present in the same event's `after` payload, it is an
+     implementation detail under this convention (one-liner, not a
+     CHANGE-REQUEST); only extras carrying NEW information not in
+     `after`/`before` remain stored-format stops.
+- Approved by: Vitali Voinski (operator), 2026-07-13; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-13 SLICE-012 (DEC-016 F-05/F-11, DEC-017): commitment.draft stores schedule_rrule as an opaque trimmed non-empty string and defers semantic parsing to window.generate (SLICE-014); service_scope checklist keys are trimmed, non-empty, and unique so frozen-key completion is deterministic; capture-UI hints remain internal TypeScript data and are never included in stored or exported schemas.
 - 2026-07-12 SLICE-011: the seed reuses `Kernel.dispatch` with a deterministic simulated owner context only for the first `person.create` bootstrap (matching the existing kernel-test actor-context pattern); every later person/client/site invocation, including human-only `site.activate`, dispatches as the returned seeded owner, pinned `tsx` exists only to run the TypeScript migration/seed entrypoints, and the local Phase 0 chain excludes only unused edge-runtime/imgproxy/realtime/Studio/vector services.
 - 2026-07-12 SLICE-010 (DEC-016 F-15): `labels` flattens the root `capture` catalog namespace; the Phase 0 shell contains its current `title` key only, selects `en` only for an English person locale, and falls back to `de` otherwise.
 - 2026-07-12 SLICE-010: the build-time read schema surface is the statically exported `readJsonSchemas` registry projection produced by Zod 4 from every definition's params and response schemas; no generated file or new dependency is needed.

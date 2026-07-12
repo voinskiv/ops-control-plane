@@ -3,6 +3,7 @@
 // actions register here starting with SLICE-005 (workspace.create).
 import type { ActionDefinition } from "./types";
 import { clientArchiveAction, clientCreateAction, clientUpdateAction } from "./client";
+import { commitmentDraftAction } from "./commitment";
 import {
   personCreateAction,
   personDeactivateAction,
@@ -47,6 +48,7 @@ registry.register(clientArchiveAction);
 registry.register(siteCreateAction);
 registry.register(siteUpdateAction);
 registry.register(siteActivateAction);
+registry.register(commitmentDraftAction);
 
 export const internalRegistry = new ActionRegistry();
 internalRegistry.register(personLinkAuthOperation);
