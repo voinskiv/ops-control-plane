@@ -104,6 +104,7 @@
       "commitment_patch_forbidden": "Dieses Feld der Verpflichtung kann im aktuellen Status nicht geändert werden.",
       "commitment_site_inactive": "Diese Verpflichtung kann nicht aktiviert werden, weil ihr Standort nicht aktiv ist.",
       "commitment_has_open_windows": "Diese Verpflichtung hat noch nicht geschlossene Zeitfenster und kann nicht archiviert werden.",
+      "window_wrong_state": "Dieses Zeitfenster kann aus seinem aktuellen Status nicht so geändert werden.",
       "internal_error": "Interner Fehler."
     }
   },

@@ -104,6 +104,7 @@
       "commitment_patch_forbidden": "This commitment field cannot be changed in its current state.",
       "commitment_site_inactive": "This commitment cannot be activated because its site is not active.",
       "commitment_has_open_windows": "This commitment has windows that are not closed and cannot be archived.",
+      "window_wrong_state": "This window cannot make that transition from its current state.",
       "internal_error": "Internal error."
     }
   },

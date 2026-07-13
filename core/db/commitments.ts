@@ -287,3 +287,27 @@ export async function dueCommitments(tx: Queryable): Promise<DueCommitment[]> {
   );
   return result.rows;
 }
+
+export interface WindowCronCommitment {
+  id: string;
+  schedule_rrule: string;
+  valid_from: string;
+  valid_to: string;
+  time_zone: string;
+}
+
+export async function windowCronCommitment(
+  tx: Queryable,
+  workspaceId: string,
+  commitmentId: string,
+): Promise<WindowCronCommitment | null> {
+  const result = await tx.query<WindowCronCommitment>(
+    `SELECT c.id, c.schedule_rrule, c.valid_from::text, c.valid_to::text,
+       w.settings->>'tz' AS time_zone
+     FROM commitments c
+     JOIN workspaces w ON w.id = c.workspace_id
+     WHERE c.workspace_id = $1 AND c.id = $2 AND c.status = 'active' AND w.status = 'active'`,
+    [workspaceId, commitmentId],
+  );
+  return result.rows[0] ?? null;
+}

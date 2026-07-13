@@ -47,7 +47,9 @@ export type RejectionCode =
   | "commitment_wrong_state"
   | "commitment_patch_forbidden"
   | "commitment_site_inactive"
-  | "commitment_has_open_windows";
+  | "commitment_has_open_windows"
+  // DEC-023: shared state-guard rejection for window actions.
+  | "window_wrong_state";
 
 // §5: the HTTP surface returns {status, result, warnings}; the same envelope
 // is stored in action_invocations.result so a replay is byte-identical (F24).
