@@ -65,6 +65,14 @@ export async function planSnapshotForCode(tx: Queryable, planCode: string): Prom
   return rows[0] ?? null;
 }
 
+export async function workspaceTimeZone(tx: Queryable, workspaceId: string): Promise<string | null> {
+  const result = await tx.query<{ time_zone: string | null }>(
+    "SELECT settings->>'tz' AS time_zone FROM workspaces WHERE id = $1",
+    [workspaceId],
+  );
+  return result.rows[0]?.time_zone ?? null;
+}
+
 export async function createWorkspaceRow(tx: Queryable, params: CreateWorkspaceParams): Promise<WorkspaceSnapshot> {
   const db = drizzleFor(tx);
   const settings = { ...DEFAULT_WORKSPACE_SETTINGS };

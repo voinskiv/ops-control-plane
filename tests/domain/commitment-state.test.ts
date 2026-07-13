@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { commitmentTransitionTarget, type CommitmentStatus, type CommitmentTransition } from "@core/domain/commitment-state";
 import { commitmentRrule } from "@core/domain/commitment-rrule-presets";
+import "./window.cases";
 
 describe("Commitment state machine (§4/§21.8)", () => {
   it("contains exactly the approved transitions", () => {

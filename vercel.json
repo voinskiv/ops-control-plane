@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/commitments/complete",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/windows/generate",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/windows/open",
+      "schedule": "* * * * *"
     }
   ]
 }

@@ -10,6 +10,7 @@ import { completeDueCommitments, VALID_TO_COMPLETION_REASON } from "@core/action
 import { createAuthDb, type AuthDb } from "@core/db/auth";
 import { connect, type DbClient } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
+import { registerWindowCases } from "./window.cases";
 
 let admin: DbClient;
 let kernelDb: KernelDb;
@@ -526,3 +527,5 @@ describe("valid-to system auto-completion (DEC-016 F-09, DEC-020/021)", () => {
     expect(events.rows[0]?.count).toBe("1");
   });
 });
+
+registerWindowCases();

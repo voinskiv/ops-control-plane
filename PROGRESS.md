@@ -100,10 +100,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-007, SLICE-012
       Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (225 tests), and production build green.
 
-- [ ] SLICE-014: Window generation + open — window state machine, cron, freeze
+- [x] SLICE-014: Window generation + open — window state machine, cron, freeze
       Architecture ref: §4 (ExecutionWindow), §5 catalog (window.generate/open), §19 Phase 1
       Done when: window.generate cron (nat key, rolling 7-day horizon, timezone-correct) freezes target/requirements at generation (§21.9); window.open fires on starts_at via cron nat key plus early open; freeze test: editing an active commitment leaves generated windows untouched (§20.11); the phase done-means "tomorrow's board auto-generates in the seed" is verified in SLICE-014A, not here — claiming it in this slice would require seed commitment data this slice's own dependency (SLICE-013 only) doesn't yet guarantee
       Depends on: SLICE-013
+      Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (241 tests), seed replay, and production build green.
 
 - [ ] SLICE-014A: Phase 1 seed extension — Demo GmbH commitment/window fixtures via kernel replay
       Architecture ref: §19 (Phase 1 seed extension, Touch rules seed ruling, DEC-004)

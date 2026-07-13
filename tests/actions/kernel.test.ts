@@ -176,6 +176,20 @@ async function adminInsertCommitment(status: "draft" | "active" | "paused" | "co
   return commitmentId;
 }
 
+async function adminInsertScheduledWindow(): Promise<string> {
+  const commitmentId = await adminInsertCommitment("active");
+  const commitment = await admin.query<{ site_id: string }>("SELECT site_id FROM commitments WHERE id = $1", [commitmentId]);
+  const id = randomUUID();
+  await admin.query(
+    `INSERT INTO execution_windows (id, workspace_id, commitment_id, site_id, date,
+       starts_at, ends_at, target_qty, requirements, fulfillment, status)
+     VALUES ($1, $2, $3, $4, '2026-07-13', '2026-07-13T06:00:00Z', '2026-07-13T14:00:00Z',
+       1, '{"verification":{"proof":{"required":false}}}', '{}', 'scheduled')`,
+    [id, workspaceId, commitmentId, commitment.rows[0]?.site_id],
+  );
+  return id;
+}
+
 registry.register({
   name: "test.client_create",
   actors: { minHumanRole: "manager", system: true },
@@ -403,6 +417,8 @@ describe("dispatch rejections (§20.1, §21.3)", () => {
       "site.activate",
       "site.create",
       "site.update",
+      "window.generate",
+      "window.open",
       "workspace.create",
     ]);
     expect(internalRegistry.list().map((definition) => definition.name)).toEqual(["person.link_auth"]);
@@ -876,6 +892,19 @@ describe("audit-per-executed-action property test (§20.3)", () => {
     "commitment.archive": {
       actor: manager,
       input: async () => ({ commitment_id: await adminInsertCommitment("draft"), reason: "Property test" }),
+      expected: "ok",
+    },
+    "window.generate": {
+      actor: { type: "system", workspaceId },
+      input: async () => {
+        await admin.query("UPDATE workspaces SET settings = '{\"tz\":\"Europe/Berlin\"}' WHERE id = $1", [workspaceId]);
+        return { commitment_id: await adminInsertCommitment("active"), date: "2026-07-13" };
+      },
+      expected: "ok",
+    },
+    "window.open": {
+      actor: manager,
+      input: async () => ({ window_id: await adminInsertScheduledWindow() }),
       expected: "ok",
     },
   };

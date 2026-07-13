@@ -1365,10 +1365,134 @@ scope for every session until resolved.
 - Approved by: Vitali Voinski (operator), 2026-07-13; transcribed verbatim by
   the implementing agent.
 
+### DEC-023 — 2026-07-13 — Window cron discovery, guards, and timezone resolution
+
+- Status: RESOLVED
+- Raised by: SLICE-014 implementation brief before answer-dependent code.
+- Question: How must cross-tenant window generation/open cron discovery,
+  window state and supervisor-scope rejections, and workspace-local DST/RRULE
+  resolution work when implementing `window.generate` and `window.open`?
+- Options considered:
+  1. Add two narrow `SECURITY DEFINER` discovery functions following DEC-020,
+     add `window_wrong_state`, enforce supervisor site scope inside each window
+     action, and fix deterministic DST behavior (gap shifts forward; overlap
+     uses the earlier offset), with established timezone and RRULE libraries
+     allowed. Pick this for least-privilege discovery, action-local fresh scope
+     checks, typed state failures, and stable cross-runtime schedule behavior,
+     accepting one authorized migration and one public rejection-code addition.
+  2. Give cron a privileged cross-tenant database pool and perform supervisor
+     scope in `authorize.ts`. Pick this for fewer database functions and a
+     centralized authorization check, accepting a broad RLS bypass and changes
+     to the frozen authorization layer without a window row/site context there.
+  3. Require external per-workspace cron fan-out and reuse
+     `validation_failed` for window state. Pick this to avoid privileged
+     database discovery and a rejection enum addition, accepting scheduler
+     tenant state outside the application and no typed state distinction for
+     clients.
+  4. Use PostgreSQL/runtime defaults for ambiguous and nonexistent local times
+     and defer RRULE parse failures to generic cron errors. Pick this for no
+     timezone/RRULE dependency, accepting environment-dependent instants and a
+     single malformed stored commitment aborting autonomous generation work.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: SECURITY/AUTHZ, TENANCY, ACTION kernel,
+  DOMAIN behavior, stored timestamps, and visible rejection surfaces are
+  affected. A wrong choice can expose cross-tenant identifiers broadly, make
+  supervisor authority stale or over-broad, store different instants for the
+  same wall clock, or destabilize autonomous cron processing.
+- Resolution:
+  1. Cron tenant discovery for window generation and opening: one new
+     migration (0009) adds two narrow SECURITY DEFINER functions per the
+     DEC-020 pattern — app_generatable_commitments() returning {workspace_id,
+     commitment_id} for active commitments on active workspaces
+     (valid-date-range overlapping the horizon), and
+     app_due_scheduled_windows() returning {workspace_id, window_id} for
+     scheduled windows with starts_at <= now(). Both: LANGUAGE sql STABLE
+     SECURITY DEFINER SET search_path='', REVOKE PUBLIC, GRANT EXECUTE to
+     app_kernel. Discovery only; every mutation dispatches through the
+     tenant-scoped kernel with its natural key.
+  2. New rejection code window_wrong_state (frozen types.ts touch authorized)
+     for state-guard violations on window actions; supervisor site-scope
+     violations reuse the existing unauthorized code — no per-cause window
+     code.
+  3. Supervisor site-scope enforcement for window actions is a domain guard
+     inside the action execute: an S actor may act only on windows whose site
+     is in sites.settings.supervisor_person_ids, resolved fresh per request
+     (F12; never cached, never an authz-layer change — authorize.ts stays
+     frozen).
+  4. DST resolution for wall-clock → timestamptz conversion in the workspace
+     tz: nonexistent local times (spring-forward gap) shift forward to the
+     first valid instant; ambiguous local times (fall-back) resolve to the
+     earlier offset. Record as the standing rule; an established tz library
+     may be added as a dependency (one-liner naming it); RRULE parsing may
+     likewise use an established library — RRULE semantic validation happens
+     here at generation (the SLICE-012 one-liner's deferred boundary), with
+     an unparseable stored rrule producing a typed validation_failed per
+     generated commitment, never a cron crash.
+- Architecture impact: authorizes migration 0009, the two DEC-020-pattern
+  discovery functions, the `window_wrong_state` public rejection code, the
+  action-local supervisor site guard, and the stated timezone/RRULE rules for
+  SLICE-014.
+- Approved by: Vitali Voinski (operator), 2026-07-13; proposal authored by the judge (Claude), transcribed by the implementing agent.
+
+### DEC-024 — 2026-07-13 — Persistence location for execution-window open time
+
+- Status: RESOLVED
+- Raised by: SLICE-014 implementation preflight after DEC-023 transcription;
+  no answer-dependent implementation code written.
+- Question: Where must `window.open` persist the required `opened_at` value?
+  The SLICE-014 brief requires the action to “record[] opened_at”, but the §3
+  `execution_windows` row and frozen migration/schema contain no `opened_at`
+  column, and DEC-023 authorizes migration 0009 for two discovery functions
+  without authorizing an execution-window stored-format change.
+- Options considered:
+  1. Add nullable `execution_windows.opened_at timestamptz` in migration 0009,
+     mirror it in `core/db/schema.ts`, set it exactly once on scheduled → open,
+     and include it in the window before/after audit snapshots. Pick this for a
+     directly queryable current-state timestamp with explicit relational
+     semantics, accepting a post-Phase-0 frozen-schema change in the migration
+     already authorized by DEC-023.
+  2. Treat the successful `window.open` audit event's `at` as the authoritative
+     open time and add no window column. Pick this for zero schema widening,
+     accepting that `opened_at` is not a field on the window row and consumers
+     must derive it from append-only audit history.
+  3. Store `opened_at` inside `execution_windows.fulfillment` or
+     `requirements`. Pick this to avoid a relational column while keeping the
+     value on the row, accepting contamination of §3's frozen JSON contracts
+     with metadata neither object defines.
+  4. Do not persist a distinct open time; rely on `starts_at` for cron opens
+     and invocation/audit timing for early opens. Pick this only if “records
+     opened_at” was non-binding prose, accepting loss of an exact normalized
+     open timestamp and ambiguity for early-open reporting.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: DOMAIN model and stored-format/frozen-schema
+  scope are affected. Guessing can create an unauthorized schema/API contract,
+  corrupt the meaning of frozen requirements/fulfillment JSON, or omit a
+  timestamp explicitly required by the task and later reads/reports.
+- Resolution:
+  1. Option 2. `window.open` persists no distinct `opened_at` value: the
+     scheduled → open status transition plus the `window.open` audit event
+     (whose `at` is the authoritative opening time) constitute the complete
+     record. The task wording “records opened_at” is withdrawn as a
+     judge-brief error — it named a field the architecture never defined.
+     Migration 0009 remains exactly the two DEC-023 discovery functions; no
+     schema column is added.
+  2. Standing rationale, recorded for future analogous questions: under
+     DEC-015 item 3, event timing facts (when did X transition happen) live in
+     `audit_events` and are consumed via audit-derived reads; a dedicated
+     column is justified only when a §3/DEC contract or read schema names it
+     as row state. Questions of this shape resolve to the audit event by
+     default.
+- Architecture impact: confirms that `window.open` changes only window status
+  and records its transition time through the existing audit event; migration
+  0009 and the frozen execution-window row shape remain unchanged.
+- Approved by: Vitali Voinski (operator), 2026-07-13; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-13 SLICE-014 (DEC-018/023/024): pinned `@js-temporal/polyfill@0.5.1` resolves workspace-local gaps/overlaps and `rrule@2.8.1` expands date-only recurrences anchored to `valid_from`; `window.generate` initializes `fulfillment` through the type definition with zero verified records and logs `{frozen_targets: {target_qty, unit, requirements}}`; generation runs daily at 00:00 UTC and due-window opening every minute.
+- 2026-07-13 SLICE-014: additive read-only helpers (workspaceTimeZone, windowCronCommitment) were added to existing frozen core/db modules because entity queries belong in their entity module; the frozen-path rule is amended operator-side to: existing core/db files admit additive, read-only, pattern-following helpers recorded per PR — behavioral or write-path changes remain CHANGE-REQUEST.
 - 2026-07-13 SLICE-013 (DEC-016 item 18, DEC-018/019/020): activation audit extras use `{frozen_spec_hash}` over the canonical type/spec/schedule/target/unit/verification/validity snapshot; `commitment.update_spec` accepts `type`/`site_id` only as rejection sentinels so immutable-field attempts return DEC-019's typed code; the approved discovery function is `app_due_commitments()`, mounted at `/api/cron/commitments/complete` daily at 01:00 UTC; manager forms expose only the four F-08 RRULE presets at `/dashboard/commitments`.
 - 2026-07-13 SLICE-012 (DEC-016 F-05/F-11, DEC-017): commitment.draft stores schedule_rrule as an opaque trimmed non-empty string and defers semantic parsing to window.generate (SLICE-014); service_scope checklist keys are trimmed, non-empty, and unique so frozen-key completion is deterministic; capture-UI hints remain internal TypeScript data and are never included in stored or exported schemas.
 - 2026-07-12 SLICE-011: the seed reuses `Kernel.dispatch` with a deterministic simulated owner context only for the first `person.create` bootstrap (matching the existing kernel-test actor-context pattern); every later person/client/site invocation, including human-only `site.activate`, dispatches as the returned seeded owner, pinned `tsx` exists only to run the TypeScript migration/seed entrypoints, and the local Phase 0 chain excludes only unused edge-runtime/imgproxy/realtime/Studio/vector services.

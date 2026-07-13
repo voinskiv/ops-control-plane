@@ -21,6 +21,7 @@ import {
 } from "./person";
 import { siteActivateAction, siteCreateAction, siteUpdateAction } from "./site";
 import { workspaceCreateAction } from "./workspace";
+import { windowGenerateAction, windowOpenAction } from "./window";
 
 export class ActionRegistry {
   private readonly definitions = new Map<string, ActionDefinition>();
@@ -61,6 +62,8 @@ registry.register(commitmentActivateAction);
 registry.register(commitmentPauseAction);
 registry.register(commitmentCompleteAction);
 registry.register(commitmentArchiveAction);
+registry.register(windowGenerateAction);
+registry.register(windowOpenAction);
 
 export const internalRegistry = new ActionRegistry();
 internalRegistry.register(personLinkAuthOperation);

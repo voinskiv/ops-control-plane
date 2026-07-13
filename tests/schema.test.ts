@@ -217,6 +217,41 @@ describe("§3 schema conventions", () => {
       public_execute: false,
     });
   });
+
+  it("DEC-023 window discovery functions are narrow, stable, SECURITY DEFINER, and app_kernel-only", async () => {
+    for (const [signature, columns] of [
+      ["app_generatable_commitments()", ["workspace_id", "commitment_id"]],
+      ["app_due_scheduled_windows()", ["workspace_id", "window_id"]],
+    ] as const) {
+      const res = await db.query<{
+        columns: string[];
+        prosecdef: boolean;
+        provolatile: string;
+        proconfig: string[];
+        kernel_execute: boolean;
+        public_execute: boolean;
+      }>(
+        `SELECT p.proargnames AS columns,
+          p.prosecdef, p.provolatile, p.proconfig,
+          has_function_privilege('app_kernel', p.oid, 'EXECUTE') AS kernel_execute,
+          EXISTS (
+            SELECT 1 FROM aclexplode(p.proacl)
+            WHERE grantee = 0 AND privilege_type = 'EXECUTE'
+          ) AS public_execute
+         FROM pg_proc p
+         WHERE p.oid = $1::regprocedure`,
+        [signature],
+      );
+      expect(res.rows[0], signature).toEqual({
+        columns: [...columns],
+        prosecdef: true,
+        provolatile: "s",
+        proconfig: ["search_path=\"\""],
+        kernel_execute: true,
+        public_execute: false,
+      });
+    }
+  });
 });
 
 describe("idempotency scoping (§5, §21.7, DEC-005)", () => {
