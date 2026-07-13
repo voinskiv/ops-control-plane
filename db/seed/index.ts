@@ -1,13 +1,69 @@
 // SLICE-011 / ARCHITECTURE.md §19 / DEC-004: Demo GmbH is produced only by
 // replaying registered kernel actions with deterministic idempotency keys.
+import { Temporal } from "@js-temporal/polyfill";
+
 import { noopUnlimitedResolver } from "../../core/actions/entitlement";
 import { Kernel } from "../../core/actions/kernel";
 import { registry } from "../../core/actions/registry";
 import type { Actor, ResponseEnvelope } from "../../core/actions/types";
 import { createKernelDb } from "../../core/db/kernel";
+import { localHorizon, occurrenceDates } from "../../core/domain/window-schedule";
 
 const KEY_PREFIX = "seed:demo-gmbh:phase0:v1";
+const PHASE_1_KEY_PREFIX = "seed:demo-gmbh:phase1:v1";
 const BOOTSTRAP_OWNER_ACTOR_ID = "00000000-0000-7000-8000-000000000011";
+const DEMO_TIME_ZONE = "Europe/Berlin";
+
+export const DEMO_PHASE_1_COMMITMENT_FIXTURES = [
+  {
+    key: "coverage",
+    siteIndex: 0,
+    input: {
+      type: "coverage",
+      title: "Frühschicht Besetzung",
+      spec: { window_start_time: "06:00", window_end_time: "14:00" },
+      schedule_rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+      target_qty: 5,
+      verification: { proof: { required: true, types: ["photo"], min_count: 1 } },
+      valid_from: "2026-07-01",
+      valid_to: "2027-12-31",
+    },
+  },
+  {
+    key: "output",
+    siteIndex: 1,
+    input: {
+      type: "output",
+      title: "Nächtlicher Palettenumschlag",
+      spec: { window_start_time: "22:00", window_end_time: "06:00" },
+      schedule_rrule: "FREQ=DAILY",
+      target_qty: 120,
+      unit: "Paletten",
+      valid_from: "2026-07-01",
+      valid_to: "2027-12-31",
+    },
+  },
+  {
+    key: "service-scope",
+    siteIndex: 2,
+    input: {
+      type: "service_scope",
+      title: "Reinigungsumfang Werk 2",
+      spec: {
+        window_start_time: "08:00",
+        window_end_time: "12:00",
+        checklist: [
+          { key: "boden_reinigen", label: "Boden reinigen" },
+          { key: "arbeitsflaechen_reinigen", label: "Arbeitsflächen reinigen" },
+          { key: "abfall_entfernen", label: "Abfall entfernen" },
+        ],
+      },
+      schedule_rrule: "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+      valid_from: "2026-07-01",
+      valid_to: "2027-12-31",
+    },
+  },
+] as const;
 
 interface SeedIds {
   workspaceId: string;
@@ -17,6 +73,7 @@ interface SeedIds {
   workerIds: string[];
   clientIds: [string, string];
   siteIds: [string, string, string, string];
+  commitmentIds: [string, string, string];
 }
 
 function resultId(envelope: ResponseEnvelope, field: string, action: string): string {
@@ -31,7 +88,10 @@ function resultId(envelope: ResponseEnvelope, field: string, action: string): st
   return value;
 }
 
-export async function seedDemoGmbH(connectionString: string): Promise<SeedIds> {
+export async function seedDemoGmbH(
+  connectionString: string,
+  now: Temporal.Instant = Temporal.Now.instant(),
+): Promise<SeedIds> {
   const kernelDb = createKernelDb(connectionString);
   const kernel = new Kernel(kernelDb, registry, noopUnlimitedResolver);
   const dispatch = (actor: Actor, name: string, input: unknown, suffix: string) =>
@@ -204,6 +264,63 @@ export async function seedDemoGmbH(connectionString: string): Promise<SeedIds> {
       }
     }
 
+    const activeSiteIds = siteIds as [string, string, string, string];
+    const phase1Dispatch = (actor: Actor, name: string, input: unknown, suffix: string) =>
+      kernel.dispatch(actor, { name, input, idempotencyKey: `${PHASE_1_KEY_PREFIX}:${suffix}` });
+    const commitmentIds: string[] = [];
+    for (const fixture of DEMO_PHASE_1_COMMITMENT_FIXTURES) {
+      const commitmentId = resultId(
+        await phase1Dispatch(
+          owner,
+          "commitment.draft",
+          { ...fixture.input, site_id: activeSiteIds[fixture.siteIndex] },
+          `commitment:${fixture.key}:draft`,
+        ),
+        "commitment_id",
+        `commitment.draft ${fixture.key}`,
+      );
+      commitmentIds.push(commitmentId);
+      resultId(
+        await phase1Dispatch(
+          owner,
+          "commitment.activate",
+          { commitment_id: commitmentId },
+          `commitment:${fixture.key}:activate`,
+        ),
+        "commitment_id",
+        `commitment.activate ${fixture.key}`,
+      );
+    }
+
+    const horizon = localHorizon(now, DEMO_TIME_ZONE);
+    for (const [index, fixture] of DEMO_PHASE_1_COMMITMENT_FIXTURES.entries()) {
+      const commitmentId = commitmentIds[index]!;
+      const rangeStart = fixture.input.valid_from > horizon.start ? fixture.input.valid_from : horizon.start;
+      const validEndExclusive = Temporal.PlainDate.from(fixture.input.valid_to).add({ days: 1 }).toString();
+      const rangeEnd = validEndExclusive < horizon.endExclusive ? validEndExclusive : horizon.endExclusive;
+      if (rangeStart >= rangeEnd) continue;
+      const dates = occurrenceDates(
+        fixture.input.schedule_rrule,
+        fixture.input.valid_from,
+        rangeStart,
+        rangeEnd,
+      );
+      for (const date of dates) {
+        resultId(
+          await kernel.dispatch(
+            { type: "system", workspaceId },
+            {
+              name: "window.generate",
+              input: { commitment_id: commitmentId, date },
+              idempotencyKey: `window.generate:${commitmentId}:${date}`,
+            },
+          ),
+          "window_id",
+          `window.generate ${fixture.key} ${date}`,
+        );
+      }
+    }
+
     return {
       workspaceId,
       ownerId,
@@ -212,6 +329,7 @@ export async function seedDemoGmbH(connectionString: string): Promise<SeedIds> {
       workerIds,
       clientIds: clientIds as [string, string],
       siteIds: siteIds as [string, string, string, string],
+      commitmentIds: commitmentIds as [string, string, string],
     };
   } finally {
     await kernelDb.end();
