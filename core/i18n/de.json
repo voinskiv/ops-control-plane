@@ -1,6 +1,7 @@
 {
   "app": {
-    "title": "Ops Control Plane"
+    "title": "Ops Control Plane",
+    "short_name": "Ops CP"
   },
   "auth": {
     "login": {
@@ -36,6 +37,26 @@
   },
   "capture": {
     "title": "Erfassung"
+  },
+  "board": {
+    "title": "Heute",
+    "eyebrow": "Tagesübersicht",
+    "workspace": "Arbeitsbereich: {workspace}",
+    "offline": "Offline – gespeicherter Stand wird angezeigt.",
+    "updated": "Stand",
+    "no_sites": "Keine aktiven Standorte zugeordnet.",
+    "no_windows": "Heute keine Zeitfenster.",
+    "target": "Ziel",
+    "not_applicable": "nicht zutreffend",
+    "site": "Standort",
+    "status": {
+      "scheduled": "Geplant",
+      "open": "Offen",
+      "fulfilled": "Erfüllt",
+      "shortfall": "Fehlmenge",
+      "missed": "Verpasst",
+      "closed": "Geschlossen"
+    }
   },
   "commitments": {
     "page_title": "Verpflichtungen",

@@ -1487,10 +1487,85 @@ scope for every session until resolved.
   0009 and the frozen execution-window row shape remain unchanged.
 - Approved by: Vitali Voinski (operator), 2026-07-13; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
 
+### DEC-025 — 2026-07-13 — Pinned me schema conflicts with frozen day-pack payloads
+
+- Status: RESOLVED
+- Raised by: SLICE-015 implementation preflight after the required i18n-gate
+  pre-step; no day-pack or UI code written.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: Which contract controls when the pinned SLICE-010 `me`
+    response schema cannot represent the already-approved frozen
+    `execution_windows.requirements` and `fulfillment` values? DEC-017 stores
+    the no-proof case as `{proof:{required:false}}`, while `core/reads/me.ts`
+    requires `types` and `min_count`; the domain stores service-scope
+    fulfillment as `checklist_state:{items:[...]}`, while `me.ts` requires
+    `checklist_state:[...]`. Populating the read with current generated windows
+    therefore fails response validation.
+  - Architecture section(s) involved: §3 commitment type definitions and
+    frozen execution-window jsonb; §7 server-side reads; §10 Heute board; §11
+    canonical cached day-pack schema; §15 catalog surface; §19 Phase 1;
+    DEC-016 items 2 and 8; DEC-017; PROGRESS.md SLICE-010 and SLICE-015.
+  - Options considered:
+    1. Correct `meResponseSchema` to the stored/domain contracts: make proof
+       requirements the DEC-017 discriminated shape and service
+       `checklist_state` an object containing `items`. Pick this for a faithful
+       byte-preserving read of frozen rows and one canonical shape across
+       domain/storage/read, accepting a visible change to SLICE-010's exported
+       JSON Schema despite the SLICE-015 ruling that the pinned read is never
+       reshaped.
+    2. Preserve the pinned `meResponseSchema` and normalize read values by
+       adding `types:[]`/`min_count:0` to no-proof requirements and flattening
+       `checklist_state.items` to an array. Pick this for exported-schema byte
+       compatibility, accepting that the day-pack no longer returns the
+       window's frozen `requirements`/`fulfillment` values and creates a second
+       observable representation of the DEC-016/017 formats.
+    3. Preserve both the exported schema and stored bytes by loosening
+       `requirements` and `fulfillment` in `meResponseSchema` to opaque JSON.
+       Pick this to avoid value rewriting, accepting a different public JSON
+       Schema reshape and loss of the typed cached-read contract.
+    4. Change the domain/write format (and existing generated rows) to match
+       the pinned read schema. Pick this only if the SLICE-010 schema is deemed
+       authoritative, accepting a frozen write-path/stored-format change,
+       migration/backfill implications, and contradiction of DEC-017; it is
+       also excluded from SLICE-015.
+  - Smallest-safe default (if allowed to proceed): none — hard blocked.
+  - Why this needs human sign-off: DOMAIN model, stored formats, and the visible
+    cached read/API surface are affected. A wrong default either makes valid
+    day-packs fail at runtime, rewrites billing-grade frozen facts in transit,
+    silently changes an exported schema, or changes the approved write format.
+- Resolution:
+  1. Option 1. Stored/domain formats per DEC-016 item 2 and DEC-017 are
+     authoritative. The `me` read's day-pack sub-schemas (`requirements`,
+     `fulfillment`/`checklist_state`) in `core/reads/me.ts` are corrected to
+     mirror the stored contracts exactly: requirements use the discriminated
+     requirement shape, with the no-proof variant omitting `types` and
+     `min_count` per DEC-017; `checklist_state` uses the stored object shape
+     `{items: [...]}`.
+  2. Identity and envelope fields of the `me` read remain unchanged. Frozen
+     values are returned byte-faithful from stored data; no normalization or
+     translation layer is introduced now or in later slices.
+  3. Binding forward principle: read schemas that project stored data derive
+     their shapes from the domain/stored contracts; a read schema never forks
+     or reinterprets a stored format. Divergence found in a pinned read schema
+     is resolved in favor of the ratified DEC.
+  4. Existing SLICE-010 tests remain unmodified. If an existing test asserts
+     the superseded sub-shapes, implementation stops again rather than
+     amending the pinned test under this decision.
+- Architecture impact: authorizes the read-schema correction only. No stored
+  format, write path, or migration changes are authorized.
+- Approved by: Vitali Voinski (operator), 2026-07-13; transcribed verbatim by
+  the implementing agent.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-13 SLICE-015 UI foundation (operator ruling): Tailwind v4 is the styling layer; shadcn/ui conventions apply with only per-slice owned source copied into `core/components/ui`; `globals.css` defines the binding 48px tap target, status colors, contrast palette, and capture type scale; no other UI library is introduced.
+- 2026-07-13 SLICE-015 day-pack (operator ruling/DEC-016 item 8): owner and manager packs contain all active workspace sites; supervisor scope is resolved fresh from `sites.settings.supervisor_person_ids` in the read transaction; sites/windows follow name/starts-at ordering, while assignments/persons use deterministic display-name/id ordering.
+- 2026-07-13 SLICE-015 frozen-path note: additive read-only helper `meDayPackRows` lives in existing `core/db/reads.ts`; it performs the single active-site/today-window/assignment projection and changes no write path.
+- 2026-07-13 SLICE-015 board/PWA boundary: window rows are deliberately non-interactive and ship no capture controls; the minimal service worker caches the authenticated `/capture` shell and last `/api/reads/me` response network-first, with no install prompt, outbox, IndexedDB, or background sync.
+- 2026-07-13 SLICE-015 dependencies: exact `tailwindcss@4.3.2` and `@tailwindcss/postcss@4.3.2` provide the approved styling pipeline; `clsx@2.1.1` and `tailwind-merge@3.6.0` support the owned shadcn-style `cn` utility, with no runtime component library.
 - 2026-07-13 SLICE-014A (DEC-016 F-13): seed replay no-op is evaluated at one injected `Temporal.Instant`; a later instant appends only newly-in-horizon windows through their `window.generate:{commitment_id}:{date}` natural keys and never duplicates or mutates existing fixtures.
 - 2026-07-13 SLICE-014 (DEC-018/023/024): pinned `@js-temporal/polyfill@0.5.1` resolves workspace-local gaps/overlaps and `rrule@2.8.1` expands date-only recurrences anchored to `valid_from`; `window.generate` initializes `fulfillment` through the type definition with zero verified records and logs `{frozen_targets: {target_qty, unit, requirements}}`; generation runs daily at 00:00 UTC and due-window opening every minute.
 - 2026-07-13 SLICE-014: additive read-only helpers (workspaceTimeZone, windowCronCommitment) were added to existing frozen core/db modules because entity queries belong in their entity module; the frozen-path rule is amended operator-side to: existing core/db files admit additive, read-only, pattern-following helpers recorded per PR — behavioral or write-path changes remain CHANGE-REQUEST.

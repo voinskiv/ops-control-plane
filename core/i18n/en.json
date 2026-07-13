@@ -1,6 +1,7 @@
 {
   "app": {
-    "title": "Ops Control Plane"
+    "title": "Ops Control Plane",
+    "short_name": "Ops CP"
   },
   "auth": {
     "login": {
@@ -36,6 +37,26 @@
   },
   "capture": {
     "title": "Capture"
+  },
+  "board": {
+    "title": "Today",
+    "eyebrow": "Daily overview",
+    "workspace": "Workspace: {workspace}",
+    "offline": "Offline – showing the saved version.",
+    "updated": "Updated",
+    "no_sites": "No active sites assigned.",
+    "no_windows": "No windows today.",
+    "target": "Target",
+    "not_applicable": "not applicable",
+    "site": "Site",
+    "status": {
+      "scheduled": "Scheduled",
+      "open": "Open",
+      "fulfilled": "Fulfilled",
+      "shortfall": "Shortfall",
+      "missed": "Missed",
+      "closed": "Closed"
+    }
   },
   "commitments": {
     "page_title": "Commitments",

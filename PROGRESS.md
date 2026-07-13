@@ -112,10 +112,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-011, SLICE-013, SLICE-014
       Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (241 tests), seed replay, and production build green.
 
-- [ ] SLICE-015: Day-pack read + browser-first Heute board
+- [x] SLICE-015: Day-pack read + browser-first Heute board
       Architecture ref: §10, §11 (day-pack read), §8 (supervisor site scope, F12), §7 (60 s poll)
       Done when: day-pack read returns windows/assignments/persons/labels for exactly the sites in sites.settings.supervisor_person_ids (F12); Heute board renders grouped by site with frozen target + live status, polling 60 s + on focus; PWA manifest + service worker present while installation remains optional (§21.12); cached day-pack rendering does not require a live token; German catalog complete for the surface
       Depends on: SLICE-009, SLICE-010, SLICE-014
+      Status: merge-ready 2026-07-13; tightened i18n gates, local typecheck, lint, i18n completeness, full suite (249 tests), board/PWA cache evidence, and production build green.
 
 - [ ] SLICE-016: record.capture end-to-end + capture controls + fulfillment
       Architecture ref: §4 (ExecutionRecord, F32), §5 catalog (record.capture/verify), §10, §11
