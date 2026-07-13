@@ -130,7 +130,7 @@ export async function meDayPackRows(
           OR COALESCE(s.settings->'supervisor_person_ids', '[]'::jsonb)
              @> jsonb_build_array($4::text)
         )
-      ORDER BY s.name ASC, ew.starts_at ASC, p.display_name ASC, p.id ASC`,
+      ORDER BY s.name ASC, ew.starts_at ASC, ew.id ASC, p.display_name ASC, p.id ASC`,
     [workspaceId, date, roleClass === "owner" || roleClass === "manager", personId],
   );
   return result.rows;

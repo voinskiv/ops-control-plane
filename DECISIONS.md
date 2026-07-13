@@ -1559,10 +1559,55 @@ scope for every session until resolved.
 
 ---
 
+### DEC-026 — 2026-07-14 — Explicit sign-out path required for capture-cache purge
+
+- Status: OPEN
+- Raised by: SLICE-015B post-merge hygiene follow-up, before cache-purge code.
+- Question:
+  CHANGE-REQUEST
+  - Blocking question: Freshly fetched `origin/main` contains no explicit
+    sign-out route, handler, UI control, or client path. Which explicit
+    sign-out contract should SLICE-015B attach the required deletion of
+    `ops-control-plane-shell-v1` and `ops-control-plane-day-pack-v1` to?
+  - Architecture section(s) involved: §10 browser-first capture surface; §11
+    cached day-pack rendering without a live token; §16 session validation;
+    §19 Phase 1 and handoff constraints; §21.12 PWA review criterion;
+    PROGRESS.md SLICE-015; SLICE-015 board/PWA boundary one-liner.
+  - Options considered:
+    1. Add an explicit app session endpoint that clears the existing auth and
+       workspace cookies, plus a client sign-out control that calls it, deletes
+       both named caches in page context, and returns to login. Pick this for a
+       complete app-owned logout flow, accepting a new public endpoint and UI
+       behavior not present on the base branch.
+    2. Add a browser Supabase sign-out flow, then clear the app cookies and both
+       named caches. Pick this if global Supabase session revocation is required,
+       accepting new client auth wiring and a decision about local-versus-global
+       sign-out semantics.
+    3. Defer the purge hook until the slice that introduces an explicit sign-out
+       path. Pick this to avoid inventing auth behavior in a hygiene follow-up,
+       accepting that SLICE-015B cannot yet satisfy the shared-device privacy
+       requirement.
+    4. Treat token expiry, invalid membership, or another implicit session
+       rejection as logout and delete the caches there. This is not compatible
+       with the task's signed-in cached-rendering contract or its explicit
+       prohibition on purging at token expiry, but is listed because those are
+       the only existing cookie-clearing paths on the base branch.
+  - Smallest-safe default (if allowed to proceed): none — hard blocked.
+  - Why this needs human sign-off: SECURITY/AUTHZ, PRIVACY/PII, and PRODUCT
+    behavior are affected. Guessing can either leave another person's cached
+    day-pack and rendered capture HTML on a shared device, erase offline access
+    on mere token expiry, or create an unapproved public logout endpoint with
+    the wrong cookie and Supabase-session semantics.
+- Resolution:
+- Architecture impact: pending; explicit sign-out behavior is currently absent
+  from the binding architecture and implementation.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
 - 2026-07-13 SLICE-015 UI foundation (operator ruling): Tailwind v4 is the styling layer; shadcn/ui conventions apply with only per-slice owned source copied into `core/components/ui`; `globals.css` defines the binding 48px tap target, status colors, contrast palette, and capture type scale; no other UI library is introduced.
-- 2026-07-13 SLICE-015 day-pack (operator ruling/DEC-016 item 8): owner and manager packs contain all active workspace sites; supervisor scope is resolved fresh from `sites.settings.supervisor_person_ids` in the read transaction; sites/windows follow name/starts-at ordering, while assignments/persons use deterministic display-name/id ordering.
+- 2026-07-13 SLICE-015 day-pack (operator ruling/DEC-016 item 8; amended by SLICE-015B): owner and manager packs contain all active workspace sites; supervisor scope is resolved fresh from `sites.settings.supervisor_person_ids` in the read transaction; sites order by name, windows by starts_at then window id, and assignments/persons by display name then id.
 - 2026-07-13 SLICE-015 frozen-path note: additive read-only helper `meDayPackRows` lives in existing `core/db/reads.ts`; it performs the single active-site/today-window/assignment projection and changes no write path.
 - 2026-07-13 SLICE-015 board/PWA boundary: window rows are deliberately non-interactive and ship no capture controls; the minimal service worker caches the authenticated `/capture` shell and last `/api/reads/me` response network-first, with no install prompt, outbox, IndexedDB, or background sync.
 - 2026-07-13 SLICE-015 dependencies: exact `tailwindcss@4.3.2` and `@tailwindcss/postcss@4.3.2` provide the approved styling pipeline; `clsx@2.1.1` and `tailwind-merge@3.6.0` support the owned shadcn-style `cn` utility, with no runtime component library.
