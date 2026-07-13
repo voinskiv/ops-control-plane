@@ -2,24 +2,13 @@ import { z } from "zod";
 
 import de from "../i18n/de.json";
 import en from "../i18n/en.json";
-import { meIdentityRow } from "../db/reads";
+import { verificationSchema } from "../domain/commitment-types";
+import { meDayPackRows, meIdentityRow, type MeDayPackRow } from "../db/reads";
 import type { ReadDefinition } from "./types";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 const timestampSchema = z.iso.datetime();
 const uuidSchema = z.uuid();
-
-const verificationSchema = z
-  .object({
-    proof: z
-      .object({
-        required: z.boolean(),
-        types: z.array(z.enum(["photo", "signature"])),
-        min_count: z.number().int().nonnegative(),
-      })
-      .strict(),
-  })
-  .strict();
 
 const checklistItemSchema = z.object({ key: z.string(), label: z.string() }).strict();
 const requirementsSchema = z
@@ -29,19 +18,27 @@ const requirementsSchema = z
   })
   .strict();
 
-const fulfillmentSchema = z
-  .object({
+const fulfillmentBaseShape = {
     rule: z.string(),
     target_qty: z.number().nullable(),
     unit: z.string().nullable(),
-    verified_qty: z.number().optional(),
-    confirmed_headcount: z.number().int().nonnegative().optional(),
-    checklist_state: z.array(z.object({ key: z.string(), done: z.boolean() }).strict()).optional(),
     satisfied: z.boolean(),
     counted_record_ids: z.array(uuidSchema),
     computed_at: timestampSchema,
-  })
+};
+
+const checklistStateItemSchema = z
+  .object({ key: z.string(), done: z.boolean(), note: z.string().optional() })
   .strict();
+const fulfillmentSchema = z.discriminatedUnion("rule", [
+  z.object({ ...fulfillmentBaseShape, rule: z.literal("coverage_max"), confirmed_headcount: z.number().int().nonnegative() }).strict(),
+  z.object({ ...fulfillmentBaseShape, rule: z.literal("output_sum"), verified_qty: z.number() }).strict(),
+  z.object({
+    ...fulfillmentBaseShape,
+    rule: z.literal("checklist_completion"),
+    checklist_state: z.object({ items: z.array(checklistStateItemSchema) }).strict(),
+  }).strict(),
+]);
 
 const assignmentSchema = z
   .object({
@@ -133,6 +130,76 @@ function captureLabels(locale: string): Record<string, string> {
   return locale === "en" ? en.capture : de.capture;
 }
 
+function timestamp(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function dayPack(rows: MeDayPackRow[]): Pick<MeResponse, "sites" | "persons"> {
+  const sites: MeResponse["sites"] = [];
+  const siteById = new Map<string, MeResponse["sites"][number]>();
+  const windowById = new Map<string, MeResponse["sites"][number]["windows"][number]>();
+  const personById = new Map<string, MeResponse["persons"][number]>();
+
+  for (const row of rows) {
+    let site = siteById.get(row.site_id);
+    if (site === undefined) {
+      site = { site_id: row.site_id, name: row.site_name, windows: [] };
+      siteById.set(row.site_id, site);
+      sites.push(site);
+    }
+    if (
+      row.window_id === null || row.commitment_id === null || row.title === null || row.type === null ||
+      row.starts_at === null || row.ends_at === null || row.requirements === null || row.fulfillment === null ||
+      row.window_status === null
+    ) {
+      continue;
+    }
+
+    let window = windowById.get(row.window_id);
+    if (window === undefined) {
+      window = {
+        window_id: row.window_id,
+        commitment_id: row.commitment_id,
+        title: row.title,
+        type: row.type,
+        starts_at: timestamp(row.starts_at),
+        ends_at: timestamp(row.ends_at),
+        target_qty: row.target_qty === null ? null : Number(row.target_qty),
+        unit: row.unit,
+        requirements: row.requirements as MeResponse["sites"][number]["windows"][number]["requirements"],
+        fulfillment: row.fulfillment as MeResponse["sites"][number]["windows"][number]["fulfillment"],
+        status: row.window_status,
+        assignments: [],
+      };
+      windowById.set(row.window_id, window);
+      site.windows.push(window);
+    }
+
+    if (
+      row.assignment_person_id !== null && row.assignment_display_name !== null &&
+      row.assignment_status !== null && row.assignment_role_class !== null
+    ) {
+      window.assignments.push({
+        person_id: row.assignment_person_id,
+        display_name: row.assignment_display_name,
+        status: row.assignment_status,
+      });
+      personById.set(row.assignment_person_id, {
+        person_id: row.assignment_person_id,
+        display_name: row.assignment_display_name,
+        role_class: row.assignment_role_class,
+      });
+    }
+  }
+
+  return {
+    sites,
+    persons: [...personById.values()].sort(
+      (left, right) => left.display_name.localeCompare(right.display_name) || left.person_id.localeCompare(right.person_id),
+    ),
+  };
+}
+
 export const meRead: ReadDefinition<Record<string, never>, MeResponse> = {
   name: "me",
   actors: ["owner", "manager", "supervisor"],
@@ -143,11 +210,15 @@ export const meRead: ReadDefinition<Record<string, never>, MeResponse> = {
     if (identity === null) {
       return { rejected: "no_dashboard_membership" };
     }
+    const date = localDate(ctx.now, workspaceTimeZone(identity.workspace_settings));
+    const pack = dayPack(
+      await meDayPackRows(ctx.tx, identity.workspace_id, date, identity.role_class, identity.person_id),
+    );
     const result: MeResponse = {
-      date: localDate(ctx.now, workspaceTimeZone(identity.workspace_settings)),
+      date,
       generated_at: ctx.now.toISOString(),
-      sites: [],
-      persons: [],
+      sites: pack.sites,
+      persons: pack.persons,
       labels: captureLabels(identity.locale),
       person_id: identity.person_id,
       display_name: identity.display_name,

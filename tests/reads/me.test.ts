@@ -40,6 +40,31 @@ const managerAuthId = randomUUID();
 const supervisorAuthId = randomUUID();
 const workerAuthId = randomUUID();
 const fixedNow = new Date("2026-07-12T22:30:00.000Z");
+const dayWorkspaceId = randomUUID();
+const dayOwnerId = randomUUID();
+const dayManagerId = randomUUID();
+const daySupervisorId = randomUUID();
+const daySitelessSupervisorId = randomUUID();
+const dayOutsideSupervisorId = randomUUID();
+const dayWorkerAId = randomUUID();
+const dayWorkerBId = randomUUID();
+const dayOwnerAuthId = randomUUID();
+const dayManagerAuthId = randomUUID();
+const daySupervisorAuthId = randomUUID();
+const daySitelessAuthId = randomUUID();
+const alphaSiteId = randomUUID();
+const betaSiteId = randomUUID();
+const gammaSiteId = randomUUID();
+const draftSiteId = randomUUID();
+const alphaCoverageCommitmentId = randomUUID();
+const alphaServiceCommitmentId = randomUUID();
+const gammaCommitmentId = randomUUID();
+const draftCommitmentId = randomUUID();
+const alphaCoverageWindowId = randomUUID();
+const alphaServiceWindowId = randomUUID();
+const alphaTomorrowWindowId = randomUUID();
+const gammaWindowId = randomUUID();
+const draftWindowId = randomUUID();
 
 const owner: Actor = { type: "person", id: ownerId, roleClass: "owner", workspaceId };
 
@@ -53,8 +78,12 @@ function cookieLine(changes: CookieChange[]): string {
   return changes.map((cookie) => `${cookie.name}=${encodeURIComponent(cookie.value)}`).join("; ");
 }
 
-async function selectedResolution(authUserId: string, email: string): Promise<{ cookies: string; resolved: ActorResolution }> {
-  const established = await auth.establish(tokenFor({ id: authUserId, email }), workspaceId);
+async function selectedResolution(
+  authUserId: string,
+  email: string,
+  selectedWorkspaceId = workspaceId,
+): Promise<{ cookies: string; resolved: ActorResolution }> {
+  const established = await auth.establish(tokenFor({ id: authUserId, email }), selectedWorkspaceId);
   expect(established.envelope.status).toBe("ok");
   const cookies = cookieLine(established.cookies);
   return { cookies, resolved: await auth.resolveActor(cookies) };
@@ -67,12 +96,21 @@ async function insertPerson(params: {
   roleClass: "owner" | "manager" | "supervisor" | "worker";
   email: string;
   locale: "de" | "en";
+  workspaceId?: string;
 }): Promise<void> {
   await admin.query(
     `INSERT INTO persons
        (id, workspace_id, display_name, role_class, auth_user_id, email, locale, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
-    [params.id, workspaceId, params.displayName, params.roleClass, params.authUserId, params.email, params.locale],
+    [
+      params.id,
+      params.workspaceId ?? workspaceId,
+      params.displayName,
+      params.roleClass,
+      params.authUserId,
+      params.email,
+      params.locale,
+    ],
   );
 }
 
@@ -148,6 +186,121 @@ beforeAll(async () => {
     email: "reads-worker@example.test",
     locale: "de",
   });
+
+  await admin.query(
+    `INSERT INTO workspaces (id, name, slug, plan_code, settings, status)
+     VALUES ($1, 'Day Pack GmbH', $2, 'pilot', $3, 'active')`,
+    [
+      dayWorkspaceId,
+      `${runTag}-day-pack`,
+      JSON.stringify({
+        tz: "Europe/Berlin",
+        default_locale: "de",
+        branding: {},
+        action_policies: {},
+        retention_months: 24,
+      }),
+    ],
+  );
+  for (const person of [
+    { id: dayOwnerId, authUserId: dayOwnerAuthId, displayName: "Day Owner", roleClass: "owner", email: "day-owner@example.test" },
+    { id: dayManagerId, authUserId: dayManagerAuthId, displayName: "Day Manager", roleClass: "manager", email: "day-manager@example.test" },
+    { id: daySupervisorId, authUserId: daySupervisorAuthId, displayName: "Day Supervisor", roleClass: "supervisor", email: "day-supervisor@example.test" },
+    { id: daySitelessSupervisorId, authUserId: daySitelessAuthId, displayName: "Siteless Supervisor", roleClass: "supervisor", email: "siteless@example.test" },
+  ] as const) {
+    await insertPerson({ ...person, locale: "de", workspaceId: dayWorkspaceId });
+  }
+  await admin.query(
+    `INSERT INTO persons (id, workspace_id, display_name, role_class, locale, status)
+     VALUES ($1, $4, 'Zara Worker', 'worker', 'de', 'active'),
+            ($2, $4, 'Adam Worker', 'worker', 'de', 'inactive'),
+            ($3, $4, 'Outside Supervisor', 'supervisor', 'de', 'active')`,
+    [dayWorkerAId, dayWorkerBId, dayOutsideSupervisorId, dayWorkspaceId],
+  );
+  const dayClientId = randomUUID();
+  await admin.query(
+    "INSERT INTO clients (id, workspace_id, name, contact, status) VALUES ($1, $2, 'Day Client', '{}', 'active')",
+    [dayClientId, dayWorkspaceId],
+  );
+  await admin.query(
+    `INSERT INTO sites (id, workspace_id, client_id, name, address, settings, status)
+     VALUES ($1, $5, $6, 'Alpha Site', '{}', $7, 'active'),
+            ($2, $5, $6, 'Beta Empty Site', '{}', $7, 'active'),
+            ($3, $5, $6, 'Gamma Outside Site', '{}', $8, 'active'),
+            ($4, $5, $6, 'Draft Site', '{}', $7, 'draft')`,
+    [
+      alphaSiteId,
+      betaSiteId,
+      gammaSiteId,
+      draftSiteId,
+      dayWorkspaceId,
+      dayClientId,
+      { supervisor_person_ids: [daySupervisorId] },
+      { supervisor_person_ids: [dayOutsideSupervisorId] },
+    ],
+  );
+  for (const commitment of [
+    { id: alphaCoverageCommitmentId, siteId: alphaSiteId, title: "Coverage Window", type: "coverage", target: "99", unit: null },
+    { id: alphaServiceCommitmentId, siteId: alphaSiteId, title: "Service Window", type: "service_scope", target: null, unit: null },
+    { id: gammaCommitmentId, siteId: gammaSiteId, title: "Outside Window", type: "output", target: "1", unit: "box" },
+    { id: draftCommitmentId, siteId: draftSiteId, title: "Draft Window", type: "coverage", target: "1", unit: null },
+  ] as const) {
+    await admin.query(
+      `INSERT INTO commitments
+         (id, workspace_id, client_id, site_id, type, title, spec, schedule_rrule,
+          target_qty, unit, verification, valid_from, valid_to, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'FREQ=DAILY', $8, $9,
+               '{"proof":{"required":false}}', '2026-01-01', '2026-12-31', 'active')`,
+      [
+        commitment.id,
+        dayWorkspaceId,
+        dayClientId,
+        commitment.siteId,
+        commitment.type,
+        commitment.title,
+        commitment.type === "service_scope"
+          ? { window_start_time: "08:00", window_end_time: "10:00", checklist: [{ key: "floor", label: "Floor" }] }
+          : { window_start_time: "06:00", window_end_time: "07:00" },
+        commitment.target,
+        commitment.unit,
+      ],
+    );
+  }
+  const noProofRequirements = { verification: { proof: { required: false } } };
+  const coverageFulfillment = {
+    rule: "coverage_max", target_qty: 4, unit: null, confirmed_headcount: 0,
+    satisfied: false, counted_record_ids: [], computed_at: fixedNow.toISOString(),
+  };
+  const serviceRequirements = {
+    verification: { proof: { required: false } },
+    checklist: [{ key: "floor", label: "Floor" }],
+  };
+  const serviceFulfillment = {
+    rule: "checklist_completion", target_qty: null, unit: null,
+    checklist_state: { items: [] }, satisfied: false, counted_record_ids: [],
+    computed_at: fixedNow.toISOString(),
+  };
+  for (const window of [
+    { id: alphaCoverageWindowId, commitmentId: alphaCoverageCommitmentId, siteId: alphaSiteId, date: "2026-07-13", starts: "2026-07-13T04:00:00Z", ends: "2026-07-13T05:00:00Z", target: "4", unit: null, requirements: noProofRequirements, fulfillment: coverageFulfillment, status: "open" },
+    { id: alphaServiceWindowId, commitmentId: alphaServiceCommitmentId, siteId: alphaSiteId, date: "2026-07-13", starts: "2026-07-13T06:00:00Z", ends: "2026-07-13T08:00:00Z", target: null, unit: null, requirements: serviceRequirements, fulfillment: serviceFulfillment, status: "scheduled" },
+    { id: alphaTomorrowWindowId, commitmentId: alphaCoverageCommitmentId, siteId: alphaSiteId, date: "2026-07-14", starts: "2026-07-14T04:00:00Z", ends: "2026-07-14T05:00:00Z", target: "4", unit: null, requirements: noProofRequirements, fulfillment: coverageFulfillment, status: "scheduled" },
+    { id: gammaWindowId, commitmentId: gammaCommitmentId, siteId: gammaSiteId, date: "2026-07-13", starts: "2026-07-13T04:00:00Z", ends: "2026-07-13T05:00:00Z", target: "1", unit: "box", requirements: noProofRequirements, fulfillment: { rule: "output_sum", target_qty: 1, unit: "box", verified_qty: 0, satisfied: false, counted_record_ids: [], computed_at: fixedNow.toISOString() }, status: "open" },
+    { id: draftWindowId, commitmentId: draftCommitmentId, siteId: draftSiteId, date: "2026-07-13", starts: "2026-07-13T04:00:00Z", ends: "2026-07-13T05:00:00Z", target: "1", unit: null, requirements: noProofRequirements, fulfillment: { ...coverageFulfillment, target_qty: 1 }, status: "open" },
+  ] as const) {
+    await admin.query(
+      `INSERT INTO execution_windows
+         (id, workspace_id, commitment_id, site_id, date, starts_at, ends_at,
+          target_qty, unit, requirements, fulfillment, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [window.id, dayWorkspaceId, window.commitmentId, window.siteId, window.date, window.starts, window.ends, window.target, window.unit, window.requirements, window.fulfillment, window.status],
+    );
+  }
+  await admin.query(
+    `INSERT INTO assignments (id, workspace_id, window_id, person_id, role, status)
+     VALUES ($1, $3, $4, $5, 'worker', 'planned'),
+            ($2, $3, $4, $6, 'worker', 'removed')`,
+    [randomUUID(), randomUUID(), dayWorkspaceId, alphaCoverageWindowId, dayWorkerAId, dayWorkerBId],
+  );
 });
 
 beforeEach(() => {
@@ -305,6 +458,122 @@ describe("SLICE-010 read layer", () => {
     await expect(handleReadsGet(reads, resolved, "me", { date: "2026-07-13" })).resolves.toEqual({
       httpStatus: 400,
       body: { status: "rejected", result: { code: "validation_failed" }, warnings: [] },
+    });
+  });
+});
+
+describe("SLICE-015 populated day-pack", () => {
+  it("returns exactly the supervisor's active F12 sites, today's ordered windows, frozen values, assignments, and roster", async () => {
+    const { resolved } = await selectedResolution(
+      daySupervisorAuthId,
+      "day-supervisor@example.test",
+      dayWorkspaceId,
+    );
+    const response = await handleReadsGet(reads, resolved, "me", {});
+    expect(response.httpStatus).toBe(200);
+    const body = response.body as {
+      date: string;
+      sites: Array<{ site_id: string; name: string; windows: Array<Record<string, unknown>> }>;
+      persons: Array<{ person_id: string; display_name: string; role_class: string }>;
+    };
+    expect(body.date).toBe("2026-07-13");
+    expect(body.sites.map((site) => ({ id: site.site_id, name: site.name }))).toEqual([
+      { id: alphaSiteId, name: "Alpha Site" },
+      { id: betaSiteId, name: "Beta Empty Site" },
+    ]);
+    expect(body.sites[1]?.windows).toEqual([]);
+    expect(body.sites[0]?.windows.map((window) => window.window_id)).toEqual([
+      alphaCoverageWindowId,
+      alphaServiceWindowId,
+    ]);
+    expect(body.sites[0]?.windows[0]).toMatchObject({
+      commitment_id: alphaCoverageCommitmentId,
+      title: "Coverage Window",
+      type: "coverage",
+      starts_at: "2026-07-13T04:00:00.000Z",
+      ends_at: "2026-07-13T05:00:00.000Z",
+      target_qty: 4,
+      unit: null,
+      requirements: { verification: { proof: { required: false } } },
+      fulfillment: { rule: "coverage_max", confirmed_headcount: 0, target_qty: 4 },
+      status: "open",
+      assignments: [
+        { person_id: dayWorkerBId, display_name: "Adam Worker", status: "removed" },
+        { person_id: dayWorkerAId, display_name: "Zara Worker", status: "planned" },
+      ],
+    });
+    expect(body.sites[0]?.windows[1]).toMatchObject({
+      requirements: {
+        verification: { proof: { required: false } },
+        checklist: [{ key: "floor", label: "Floor" }],
+      },
+      fulfillment: { checklist_state: { items: [] } },
+    });
+    expect(body.persons).toEqual([
+      { person_id: dayWorkerBId, display_name: "Adam Worker", role_class: "worker" },
+      { person_id: dayWorkerAId, display_name: "Zara Worker", role_class: "worker" },
+    ]);
+  });
+
+  it("returns all and only active workspace sites to managers and owners", async () => {
+    for (const [authUserId, email] of [
+      [dayManagerAuthId, "day-manager@example.test"],
+      [dayOwnerAuthId, "day-owner@example.test"],
+    ] as const) {
+      const { resolved } = await selectedResolution(authUserId, email, dayWorkspaceId);
+      const response = await handleReadsGet(reads, resolved, "me", {});
+      expect(response).toMatchObject({ httpStatus: 200 });
+      const body = response.body as { sites: Array<{ site_id: string }> };
+      expect(body.sites.map((site) => site.site_id)).toEqual([alphaSiteId, betaSiteId, gammaSiteId]);
+    }
+  });
+
+  it("resolves supervisor_person_ids fresh on every request", async () => {
+    const { resolved } = await selectedResolution(
+      daySupervisorAuthId,
+      "day-supervisor@example.test",
+      dayWorkspaceId,
+    );
+    await admin.query("UPDATE sites SET settings = $1 WHERE id = $2", [
+      { supervisor_person_ids: [dayOutsideSupervisorId] },
+      alphaSiteId,
+    ]);
+    await admin.query("UPDATE sites SET settings = $1 WHERE id = $2", [
+      { supervisor_person_ids: [daySupervisorId] },
+      gammaSiteId,
+    ]);
+    try {
+      const response = await handleReadsGet(reads, resolved, "me", {});
+      const body = response.body as { sites: Array<{ site_id: string }> };
+      expect(body.sites.map((site) => site.site_id)).toEqual([betaSiteId, gammaSiteId]);
+    } finally {
+      await admin.query("UPDATE sites SET settings = $1 WHERE id = $2", [
+        { supervisor_person_ids: [daySupervisorId] },
+        alphaSiteId,
+      ]);
+      await admin.query("UPDATE sites SET settings = $1 WHERE id = $2", [
+        { supervisor_person_ids: [dayOutsideSupervisorId] },
+        gammaSiteId,
+      ]);
+    }
+  });
+
+  it("returns the canonical empty-day shape for a siteless supervisor", async () => {
+    const { resolved } = await selectedResolution(daySitelessAuthId, "siteless@example.test", dayWorkspaceId);
+    await expect(handleReadsGet(reads, resolved, "me", {})).resolves.toEqual({
+      httpStatus: 200,
+      body: {
+        date: "2026-07-13",
+        generated_at: fixedNow.toISOString(),
+        sites: [],
+        persons: [],
+        labels: { title: "Erfassung" },
+        person_id: daySitelessSupervisorId,
+        display_name: "Siteless Supervisor",
+        role_class: "supervisor",
+        workspace_id: dayWorkspaceId,
+        workspace_display_name: "Day Pack GmbH",
+      },
     });
   });
 });

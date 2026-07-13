@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-heading: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-status-scheduled: var(--status-scheduled);
+  --color-status-scheduled-foreground: var(--status-scheduled-foreground);
+  --color-status-open: var(--status-open);
+  --color-status-open-foreground: var(--status-open-foreground);
+  --color-status-fulfilled: var(--status-fulfilled);
+  --color-status-fulfilled-foreground: var(--status-fulfilled-foreground);
+  --color-status-shortfall: var(--status-shortfall);
+  --color-status-shortfall-foreground: var(--status-shortfall-foreground);
+  --color-status-missed: var(--status-missed);
+  --color-status-missed-foreground: var(--status-missed-foreground);
+  --color-status-closed: var(--status-closed);
+  --color-status-closed-foreground: var(--status-closed-foreground);
+  --spacing-tap: var(--tap-target-min);
+  --text-board-title: var(--type-board-title);
+  --text-site-title: var(--type-site-title);
+  --text-window-title: var(--type-window-title);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --destructive: oklch(0.5 0.2 27);
+  --border: oklch(0.8 0 0);
+  --ring: oklch(0.45 0 0);
+  --radius: 0.625rem;
+
+  /* §10 binding visual contract: 48px taps, high-contrast status colors,
+     and a three-level type scale shared by capture surfaces. */
+  --tap-target-min: 3rem;
+  --type-board-title: 2rem;
+  --type-site-title: 1.25rem;
+  --type-window-title: 1.0625rem;
+  --status-scheduled: oklch(0.92 0.015 255);
+  --status-scheduled-foreground: oklch(0.25 0.04 255);
+  --status-open: oklch(0.88 0.08 230);
+  --status-open-foreground: oklch(0.22 0.08 240);
+  --status-fulfilled: oklch(0.88 0.12 145);
+  --status-fulfilled-foreground: oklch(0.22 0.08 145);
+  --status-shortfall: oklch(0.9 0.13 85);
+  --status-shortfall-foreground: oklch(0.28 0.08 65);
+  --status-missed: oklch(0.84 0.13 25);
+  --status-missed-foreground: oklch(0.25 0.1 25);
+  --status-closed: oklch(0.9 0.01 260);
+  --status-closed-foreground: oklch(0.3 0.02 260);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply min-h-dvh bg-background text-foreground;
+  }
+}
