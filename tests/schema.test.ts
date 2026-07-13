@@ -188,6 +188,35 @@ describe("§3 schema conventions", () => {
       expect(byTable.get(table.table), table.table).toEqual(table.columns);
     }
   });
+
+  it("DEC-020 due-commitment discovery is narrow, stable, SECURITY DEFINER, and app_kernel-only", async () => {
+    const res = await db.query<{
+      columns: string[];
+      prosecdef: boolean;
+      provolatile: string;
+      proconfig: string[];
+      kernel_execute: boolean;
+      public_execute: boolean;
+    }>(
+      `SELECT p.proargnames AS columns,
+        p.prosecdef, p.provolatile, p.proconfig,
+        has_function_privilege('app_kernel', p.oid, 'EXECUTE') AS kernel_execute,
+        EXISTS (
+          SELECT 1 FROM aclexplode(p.proacl)
+          WHERE grantee = 0 AND privilege_type = 'EXECUTE'
+        ) AS public_execute
+       FROM pg_proc p
+       WHERE p.oid = 'app_due_commitments()'::regprocedure`,
+    );
+    expect(res.rows[0]).toEqual({
+      columns: ["workspace_id", "commitment_id"],
+      prosecdef: true,
+      provolatile: "s",
+      proconfig: ["search_path=\"\""],
+      kernel_execute: true,
+      public_execute: false,
+    });
+  });
 });
 
 describe("idempotency scoping (§5, §21.7, DEC-005)", () => {

@@ -1149,10 +1149,227 @@ scope for every session until resolved.
      `after`/`before` remain stored-format stops.
 - Approved by: Vitali Voinski (operator), 2026-07-13; proposal reviewed by the judge (Claude), transcribed by the implementing agent.
 
+### DEC-019 — 2026-07-13 — SLICE-013 commitment lifecycle public contract and completion scope
+
+- Status: RESOLVED
+- Raised by: SLICE-013 implementation preflight; no SLICE-013 implementation
+  code written.
+- Question:
+  1. Which public action owns the `paused -> active` transition? The binding
+     §4 table assigns it to `commitment.activate`, while the SLICE-013 task
+     requires a fifth new action named `commitment.resume` and five appended
+     §21.2 names/fixtures.
+  2. Must `commitment.pause` and `commitment.archive` accept a required
+     `reason`? The §5 catalog groups pause/complete/archive under input
+     `id, reason`, while the SLICE-013 task requires minimal
+     `{commitment_id}` input for each lifecycle action.
+  3. What are the exact public rejection codes for wrong-from-state,
+     state-forbidden patches, inactive-site activation, and open-window
+     archive guards? The task requires new typed/catalog-translated
+     rejections but does not name their API-visible codes.
+  4. Is this slice complete after only update_spec/activate/pause/resume/archive
+     with no UI, or must it also satisfy PROGRESS.md's unchanged Done-when by
+     shipping commitment.complete, the valid_to system tick, and manager forms?
+     The task says its five-action scope is exact and explicitly excludes UI,
+     but also requires the PROGRESS.md Done-when verbatim and checking the
+     slice complete at merge-readiness.
+- Options considered:
+  1. Paused-to-active action:
+     - Keep §4 verbatim: `commitment.activate` accepts both `draft` and
+       `paused`; do not register `commitment.resume`. Pick this to preserve the
+       current architecture and avoid an alias, but it produces four rather
+       than five new public action names and contradicts the task brief.
+     - Amend §4/§5 so `commitment.activate` is draft-only and
+       `commitment.resume` owns paused-to-active. Pick this for explicit
+       lifecycle verbs and the requested five-name surface, accepting a new
+       public action contract.
+     - Register `commitment.resume` as an alias while retaining paused support
+       in `commitment.activate`. Pick this for compatibility with both texts,
+       accepting two public commands for one transition and a widened action
+       surface.
+  2. Lifecycle reason input:
+     - Require `{commitment_id, reason}` for pause/archive as §5 says. Pick
+       this for an explicit human rationale on the audit trail, accepting that
+       the task's minimal-input contract and fixtures must change.
+     - Amend §5 so pause/archive take only `{commitment_id}`. Pick this for the
+       task's smallest input and no new logged information, accepting removal
+       of a catalog-required field.
+     - Require a reason for only one of pause/archive. Pick this if the
+       operator considers one transition consequential enough to explain and
+       the other self-describing; name which action requires it.
+  3. Typed rejection surface:
+     - Add distinct codes `commitment_wrong_state`,
+       `commitment_patch_forbidden`, `commitment_site_inactive`, and
+       `commitment_has_open_windows`. Pick this for stable, specific client
+       handling with one state code and one patch code shared across fields.
+     - Reuse `validation_failed` for all four guards. Pick this for no public
+       enum/catalog widening, accepting that clients cannot name or distinguish
+       the violations as the task requests.
+     - Provide a different exact code set. Pick this if clients need finer
+       distinctions (for example per transition or per forbidden field); list
+       every code because the response/catalog surface is frozen by usage.
+  4. Slice completion boundary:
+     - Treat this PR as the exact five-action backend-only task and leave
+       SLICE-013 unchecked until complete/auto-complete/forms ship separately.
+       Pick this to honor the explicit exclusions, accepting that this PR is
+       not the whole PROGRESS slice and cannot claim its Done-when.
+     - Expand this PR to include commitment.complete, the valid_to system tick,
+       and manager forms. Pick this to satisfy the current PROGRESS Done-when,
+       accepting a direct expansion beyond the task's exact scope/exclusions.
+     - Amend PROGRESS.md through an approved-decision docs PR so the five-action
+       backend scope is the complete slice and move complete/auto-complete/forms
+       to named later slices. Pick this to keep the implementation brief exact;
+       identify the destination slices and provide verbatim amendment diffs.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: PRODUCT behavior, ACTION kernel/public API
+  surface, AUDIT model, and visible error responses are affected. Guessing can
+  create duplicate transition commands, omit a required rationale from the
+  append-only audit history, freeze incompatible client-visible rejection
+  codes, or falsely mark a vertical slice complete while architecture-required
+  actions and UI remain absent.
+- Resolution:
+  - Preserve the §4 state machine: commitment.activate owns both draft →
+    active and paused → active; no commitment.resume action is introduced.
+  - Preserve §5 inputs: pause, complete, and archive require {commitment_id,
+    reason}. The valid-to system invocation supplies a canonical system reason
+    and uses natural key commitment.complete:{commitment_id}.
+  - Add public rejection codes commitment_wrong_state,
+    commitment_patch_forbidden, commitment_site_inactive, and
+    commitment_has_open_windows, each with complete catalog translations.
+  - Implement the complete existing SLICE-013 scope in one PR: update_spec,
+    activate, pause, complete, archive, valid-to auto-completion, manager
+    forms with RRULE presets, German catalog, and tests. Mark SLICE-013
+    complete only when its existing Done-when is satisfied.
+  - This resolution requires no ARCHITECTURE.md or PROGRESS.md scope
+    amendment.
+- Architecture impact: none; preserves §4, §5, and the existing PROGRESS.md
+  SLICE-013 scope while fixing the public rejection codes.
+- Approved by: Vitali Voinski (operator), 2026-07-13; transcribed verbatim by
+  the implementing agent.
+
+### DEC-020 — 2026-07-13 — RLS-safe tenant discovery for commitment auto-completion cron
+
+- Status: RESOLVED
+- Raised by: SLICE-013 implementation preflight after DEC-019 resolution; no
+  SLICE-013 implementation code written beyond decision transcription.
+- Question: How does the daily valid-to cron discover due active/paused
+  commitments across workspaces before it can dispatch the tenant-scoped
+  `commitment.complete` action? DEC-016 item 18/F-09 requires a daily scan
+  using each workspace timezone, but every current application DB pool assumes
+  the RLS-bound `app_kernel` role and tenant policies reveal no workspace row
+  until `app.workspace_id` is already known. There is no existing global
+  scheduler read or SECURITY DEFINER function for tenant discovery.
+- Options considered:
+  1. Add a narrowly scoped SECURITY DEFINER function in a new migration that
+     returns only `{workspace_id, commitment_id}` for active/paused
+     commitments whose `valid_to` is before that workspace's local date, grant
+     EXECUTE only to `app_kernel`, pin an empty search_path, and dispatch each
+     result through the kernel with its tenant system actor and natural key.
+     Pick this for database-enforced minimal disclosure and timezone-correct
+     discovery, accepting a post-Phase-0 migration and a new frozen security
+     function.
+  2. Add a privileged server-only cron DB pool that does not assume
+     `app_kernel`, scans due commitments/workspace settings across RLS, and
+     uses the ordinary kernel only for mutations. Pick this to avoid a schema
+     migration, accepting a broad RLS-bypassing read capability and a second
+     database privilege mode in application code.
+  3. Require the cron caller to supply one `workspace_id`, run the scan under
+     that workspace GUC, and arrange external per-workspace fan-out. Pick this
+     to preserve strict RLS and avoid privileged discovery, accepting external
+     scheduler state and an API input not defined by the architecture.
+  4. Defer the route/fan-out and ship only `commitment.complete` plus a pure
+     per-workspace completion helper. Pick this to avoid choosing an access
+     model now, accepting that SLICE-013's required automatic valid-to behavior
+     and Done-when remain incomplete.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: SECURITY/AUTHZ and TENANCY are affected.
+  Choosing incorrectly either grants application code cross-tenant visibility,
+  weakens the RLS-only access posture, exposes workspace identifiers through a
+  new scheduler surface, or leaves required state transitions undispatched.
+- Resolution: Add a narrowly scoped `SECURITY DEFINER` function via migration
+  that returns only due `{workspace_id, commitment_id}` pairs for the daily
+  completion cron (option 1). The function grants only the discovery needed
+  to dispatch each completion through the ordinary tenant-scoped kernel.
+- Architecture impact: authorizes the SLICE-013 post-Phase-0 migration and
+  narrowly scoped SECURITY DEFINER due-commitment discovery function; no
+  privileged application pool or external tenant-fan-out contract.
+- Approved by: Vitali Voinski (operator), 2026-07-13; transcribed by the
+  implementing agent.
+
+### DEC-021 — 2026-07-13 — Canonical valid-to auto-completion reason
+
+- Status: RESOLVED
+- Raised by: SLICE-013 implementation preflight after DEC-020 resolution; no
+  SLICE-013 implementation code written beyond decision transcription.
+- Question: What exact string must the daily system invocation persist as the
+  required `reason` in `commitment.complete` input when `valid_to` has passed?
+  DEC-019 requires a canonical system reason but does not fix its stored value.
+- Options considered:
+  1. `valid_to_reached`. Pick this for a locale-neutral stable machine token
+     that report/audit consumers can compare without parsing prose.
+  2. `Commitment valid_to reached`. Pick this for immediately readable English
+     history, accepting locale-specific prose in stored invocation input.
+  3. `Gültigkeitsende erreicht`. Pick this for German-first operator history,
+     accepting localized stored data and future translation/comparison issues.
+  4. Provide another exact string. Pick this if an existing external audit or
+     reporting vocabulary must be matched; the value must be supplied
+     verbatim.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: stored-format and AUDIT model semantics are
+  affected. `action_invocations.input` is permanent replay history; changing
+  the canonical reason later would split equivalent system completions across
+  incompatible stored values and make exact audit/report filtering unstable.
+- Resolution: The exact persisted system reason is `valid_to_reached`.
+- Architecture impact: none expected; concretizes DEC-019's canonical system
+  reason without changing the state machine or action input shape.
+- Approved by: Vitali Voinski (operator), 2026-07-13; transcribed verbatim by
+  the implementing agent.
+
+### DEC-022 — 2026-07-13 — Persistence location for commitment lifecycle reasons
+
+- Status: RESOLVED
+- Raised by: SLICE-013 focused-test verification after DEC-021 resolution.
+  Lifecycle code currently passes the approved reason into the action, but no
+  audit/storage representation has been added.
+- Question: Where must `commitment.pause`/`complete`/`archive` reasons,
+  including the exact system value `valid_to_reached`, be persisted? The
+  existing `action_invocations` table stores only `input_hash`, not action
+  input, and §5 currently declares no audit extras for these actions.
+- Options considered:
+  1. Persist `{reason: input.reason}` in audit extras for every successful
+     pause/complete/archive. Pick this for the existing `person.deactivate`
+     precedent and one queryable audit representation for human and system
+     reasons, accepting a §5 audit-extras concretization for the commitment
+     lifecycle row.
+  2. Persist `{reason: "valid_to_reached"}` only for system auto-completion.
+     Pick this to satisfy DEC-021 with the smallest new history, accepting that
+     required human reasons remain hash-only and the same action has
+     actor-dependent audit shape.
+  3. Add an `input jsonb` column to `action_invocations` and persist every
+     action input. Pick this for complete replay/debug visibility, accepting a
+     broad frozen-schema and privacy expansion far beyond SLICE-013.
+  4. Treat the existing `input_hash` as sufficient persistence and store no
+     readable reason. Pick this for zero audit/schema widening, accepting that
+     the exact DEC-021 value cannot be recovered, displayed, or filtered from
+     stored history.
+- Smallest-safe default (if allowed to proceed): none — hard blocked.
+- Why this needs human sign-off: AUDIT model, stored format, and potentially
+  PRIVACY/PII are affected. Guessing either creates a new append-only audit
+  field, broadens permanent invocation storage, or claims a reason is
+  persisted when only a non-reversible hash exists.
+- Resolution: Persist `{reason: input.reason}` in audit extras for every
+  successful `commitment.pause`, `commitment.complete`, and
+  `commitment.archive` execution (option 1).
+- Architecture impact: concretizes the §5 audit extras for the three
+  reason-bearing commitment lifecycle actions; no schema change.
+- Approved by: Vitali Voinski (operator), 2026-07-13; transcribed verbatim by
+  the implementing agent.
+
 ---
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-13 SLICE-013 (DEC-016 item 18, DEC-018/019/020): activation audit extras use `{frozen_spec_hash}` over the canonical type/spec/schedule/target/unit/verification/validity snapshot; `commitment.update_spec` accepts `type`/`site_id` only as rejection sentinels so immutable-field attempts return DEC-019's typed code; the approved discovery function is `app_due_commitments()`, mounted at `/api/cron/commitments/complete` daily at 01:00 UTC; manager forms expose only the four F-08 RRULE presets at `/dashboard/commitments`.
 - 2026-07-13 SLICE-012 (DEC-016 F-05/F-11, DEC-017): commitment.draft stores schedule_rrule as an opaque trimmed non-empty string and defers semantic parsing to window.generate (SLICE-014); service_scope checklist keys are trimmed, non-empty, and unique so frozen-key completion is deterministic; capture-UI hints remain internal TypeScript data and are never included in stored or exported schemas.
 - 2026-07-12 SLICE-011: the seed reuses `Kernel.dispatch` with a deterministic simulated owner context only for the first `person.create` bootstrap (matching the existing kernel-test actor-context pattern); every later person/client/site invocation, including human-only `site.activate`, dispatches as the returned seeded owner, pinned `tsx` exists only to run the TypeScript migration/seed entrypoints, and the local Phase 0 chain excludes only unused edge-runtime/imgproxy/realtime/Studio/vector services.
 - 2026-07-12 SLICE-010 (DEC-016 F-15): `labels` flattens the root `capture` catalog namespace; the Phase 0 shell contains its current `title` key only, selects `en` only for an English person locale, and falls back to `de` otherwise.
