@@ -106,10 +106,11 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-013
       Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (241 tests), seed replay, and production build green.
 
-- [ ] SLICE-014A: Phase 1 seed extension — Demo GmbH commitment/window fixtures via kernel replay
+- [x] SLICE-014A: Phase 1 seed extension — Demo GmbH commitment/window fixtures via kernel replay
       Architecture ref: §19 (Phase 1 seed extension, Touch rules seed ruling, DEC-004)
       Done when: the seed script extends Demo GmbH by replaying commitment.draft + commitment.activate for the fixture commitments and invoking window.generate for the rolling horizon, all as kernel action invocations with deterministic idempotency keys — no direct SQL; re-running the seed is a no-op (idempotent replay); this slice fulfills the Phase 1 done-means "tomorrow's board auto-generates in the seed" (moved here from SLICE-014 to avoid a circular dependency)
       Depends on: SLICE-011, SLICE-013, SLICE-014
+      Status: merge-ready 2026-07-13; local typecheck, lint, i18n completeness, full suite (241 tests), seed replay, and production build green.
 
 - [ ] SLICE-015: Day-pack read + browser-first Heute board
       Architecture ref: §10, §11 (day-pack read), §8 (supervisor site scope, F12), §7 (60 s poll)
