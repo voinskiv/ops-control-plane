@@ -1561,7 +1561,7 @@ scope for every session until resolved.
 
 ### DEC-026 — 2026-07-14 — Explicit sign-out path required for capture-cache purge
 
-- Status: OPEN
+- Status: RESOLVED
 - Raised by: SLICE-015B post-merge hygiene follow-up, before cache-purge code.
 - Question:
   CHANGE-REQUEST
@@ -1599,8 +1599,33 @@ scope for every session until resolved.
     on mere token expiry, or create an unapproved public logout endpoint with
     the wrong cookie and Supabase-session semantics.
 - Resolution:
-- Architecture impact: pending; explicit sign-out behavior is currently absent
-  from the binding architecture and implementation.
+  DEC-026 — RESOLVED (operator): Option 3 for SLICE-015B; sign-out
+  authorized as its own slice (SLICE-015C).
+
+  Ruling:
+  1. SLICE-015B merges with item 1 only (window-ordering tiebreaker).
+     The cache purge is deferred, recorded in the SLICE-015 status
+     line as deferred-to-015C, not dropped.
+  2. Options 1 and 2 are combined as the sign-out contract, owned by
+     SLICE-015C: an app-owned sign-out route that (a) revokes the
+     Supabase session server-side via the existing auth transport
+     (local scope — this device only, not global), (b) clears
+     AUTH_TOKEN_COOKIE and WORKSPACE_COOKIE, and (c) on the client,
+     deletes ops-control-plane-shell-v1 and
+     ops-control-plane-day-pack-v1 before redirecting to /login.
+     The service worker registration itself remains.
+  3. Option 4 remains rejected on the record: no purge on token
+     expiry or session rejection — §11's offline cached rendering
+     for a signed-in supervisor is unchanged. The purge fires on
+     explicit sign-out only.
+  4. Surface: one sign-out control on the authenticated shells
+     (capture + dashboard), catalog-labelled, meeting the §10 tap
+     target on the capture surface. No confirmation dialog, no
+     global-logout option in this slice.
+- Architecture impact: adds the sign-out route to the §16 auth
+  surface; §11 unchanged. No stored-format or migration changes.
+- Approved by: Vitali Voinski (operator), 2026-07-14; transcribed verbatim by
+  the implementing agent.
 
 ---
 
