@@ -463,6 +463,71 @@ describe("SLICE-010 read layer", () => {
 });
 
 describe("SLICE-015 populated day-pack", () => {
+  it("orders equal-start windows by id across repeated reads", async () => {
+    const firstWindowId = "00000000-0000-7000-8000-000000000001";
+    const secondWindowId = "00000000-0000-7000-8000-000000000002";
+    const sameStart = "2026-07-13T05:00:00Z";
+    const sameEnd = "2026-07-13T06:00:00Z";
+    const requirements = { verification: { proof: { required: false } } };
+    const fulfillment = {
+      rule: "coverage_max",
+      target_qty: 4,
+      unit: null,
+      confirmed_headcount: 0,
+      satisfied: false,
+      counted_record_ids: [],
+      computed_at: fixedNow.toISOString(),
+    };
+    await admin.query(
+      `INSERT INTO execution_windows
+         (id, workspace_id, commitment_id, site_id, date, starts_at, ends_at,
+          target_qty, unit, requirements, fulfillment, status)
+       VALUES ($1, $3, $4, $5, '2026-07-13', $6, $7, '4', NULL, $8, $9, 'open'),
+              ($2, $3, $4, $5, '2026-07-13', $6, $7, '4', NULL, $8, $9, 'open')`,
+      [
+        firstWindowId,
+        secondWindowId,
+        dayWorkspaceId,
+        alphaCoverageCommitmentId,
+        alphaSiteId,
+        sameStart,
+        sameEnd,
+        requirements,
+        fulfillment,
+      ],
+    );
+
+    try {
+      const { resolved } = await selectedResolution(
+        daySupervisorAuthId,
+        "day-supervisor@example.test",
+        dayWorkspaceId,
+      );
+      const observedOrders: string[][] = [];
+      for (let read = 0; read < 2; read += 1) {
+        const response = await handleReadsGet(reads, resolved, "me", {});
+        expect(response.httpStatus).toBe(200);
+        const body = response.body as {
+          sites: Array<{ site_id: string; windows: Array<{ window_id: string }> }>;
+        };
+        observedOrders.push(
+          body.sites
+            .find((site) => site.site_id === alphaSiteId)
+            ?.windows.map((window) => window.window_id)
+            .filter((windowId) => windowId === firstWindowId || windowId === secondWindowId) ?? [],
+        );
+      }
+      expect(observedOrders).toEqual([
+        [firstWindowId, secondWindowId],
+        [firstWindowId, secondWindowId],
+      ]);
+    } finally {
+      await admin.query("DELETE FROM execution_windows WHERE id = ANY($1::uuid[])", [
+        [firstWindowId, secondWindowId],
+      ]);
+    }
+  });
+
   it("returns exactly the supervisor's active F12 sites, today's ordered windows, frozen values, assignments, and roster", async () => {
     const { resolved } = await selectedResolution(
       daySupervisorAuthId,
