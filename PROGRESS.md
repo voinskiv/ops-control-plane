@@ -118,6 +118,7 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Depends on: SLICE-009, SLICE-010, SLICE-014
       Status: merge-ready 2026-07-13; tightened i18n gates, local typecheck, lint, i18n completeness, full suite (249 tests), board/PWA cache evidence, and production build green.
       Follow-up status: SLICE-015B deterministic window ordering implemented; explicit sign-out cache purge deferred to SLICE-015C per RESOLVED DEC-026, not dropped.
+      Follow-up status: SLICE-015C explicit local sign-out and capture-cache purge implemented 2026-07-14 per DEC-026; local typecheck, lint, i18n completeness, full suite (255 tests), and production build green; no SLICE-015 checkbox change pending review/merge.
 
 - [ ] SLICE-016: record.capture end-to-end + capture controls + fulfillment
       Architecture ref: §4 (ExecutionRecord, F32), §5 catalog (record.capture/verify), §10, §11

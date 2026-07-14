@@ -31,6 +31,7 @@ export interface AuthTransport {
   sendInvite(params: SendInviteParams): Promise<SentInvite>;
   sendMagicLink(params: SendMagicLinkParams): Promise<void>;
   userFromAccessToken(accessToken: string): Promise<AuthIdentity | null>;
+  revokeSession?(accessToken: string): Promise<void>;
 }
 
 let overrideTransport: AuthTransport | null = null;
@@ -175,6 +176,22 @@ const supabaseTransport: AuthTransport = {
       },
     });
     return parseAuthResponse(response, accessToken);
+  },
+  async revokeSession(accessToken) {
+    const key = process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (key === undefined || key === "") {
+      throw new Error("SUPABASE_ANON_KEY is not configured");
+    }
+    const response = await fetch(supabaseUrl("logout", new URLSearchParams({ scope: "local" })), {
+      method: "POST",
+      headers: {
+        apikey: key,
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Supabase Auth logout returned ${response.status}`);
+    }
   },
 };
 

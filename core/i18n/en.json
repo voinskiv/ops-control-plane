@@ -4,6 +4,7 @@
     "short_name": "Ops CP"
   },
   "auth": {
+    "sign_out": "Sign out",
     "login": {
       "title": "Sign in",
       "email": "Email",

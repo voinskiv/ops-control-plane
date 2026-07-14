@@ -140,6 +140,10 @@ export async function handleWorkspacePost(auth: DashboardAuth, request: Request)
   return responseFromSession(await auth.switchWorkspace(request.headers.get("cookie"), parsed.data.workspace_id));
 }
 
+export async function handleSignOutPost(auth: DashboardAuth, request: Request): Promise<Response> {
+  return responseFromSession(await auth.signOut(request.headers.get("cookie")));
+}
+
 export async function handleAcceptPost(auth: DashboardAuth, request: Request): Promise<Response> {
   const parsed = acceptBody.safeParse(await jsonBody(request));
   if (!parsed.success) {

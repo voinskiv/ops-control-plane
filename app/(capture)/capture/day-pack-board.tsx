@@ -6,6 +6,8 @@ import { Badge } from "@core/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@core/components/ui/card";
 import type { MeResponse } from "@core/reads/me";
 
+import { SignOutControl } from "../../sign-out-control";
+
 type WindowStatus = MeResponse["sites"][number]["windows"][number]["status"];
 
 export interface BoardLabels {
@@ -19,6 +21,7 @@ export interface BoardLabels {
   target: string;
   notApplicable: string;
   site: string;
+  signOut: string;
   statuses: Record<WindowStatus, string>;
 }
 
@@ -132,7 +135,10 @@ export function DayPackBoard({
             <h1 className="text-board-title leading-none font-bold tracking-tight">{labels.title}</h1>
             <p className="mt-2 text-lg font-semibold capitalize">{localDay(pack.date, locale)}</p>
           </div>
-          <p className="text-sm font-medium text-muted-foreground">{labels.workspace}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-medium text-muted-foreground">{labels.workspace}</p>
+            <SignOutControl label={labels.signOut} />
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           {`${labels.updated}: `}<time dateTime={pack.generated_at}>{generatedAt(pack.generated_at, locale)}</time>

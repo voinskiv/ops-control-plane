@@ -268,6 +268,21 @@ export class DashboardAuth {
     return this.establish(cookies.accessToken, parsedWorkspace.data);
   }
 
+  async signOut(cookieHeaderValue: string | null): Promise<SessionResult> {
+    const accessToken = accessTokenInput.safeParse(parseCookieHeader(cookieHeaderValue).accessToken);
+    if (accessToken.success) {
+      const revokeSession = getAuthTransport().revokeSession;
+      if (revokeSession === undefined) {
+        throw new Error("Auth transport does not support session revocation");
+      }
+      await revokeSession(accessToken.data);
+    }
+    return {
+      envelope: { status: "ok", result: null, warnings: [] },
+      cookies: [clearAuthCookie(), clearWorkspaceCookie()],
+    };
+  }
+
   async acceptInvite(params: {
     accessToken: string;
     workspaceId: string;
