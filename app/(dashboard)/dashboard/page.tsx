@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import { forbidden, redirect } from "next/navigation";
 
+import { SignOutControl } from "../../sign-out-control";
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -20,6 +22,7 @@ export default async function DashboardPage() {
       <h1>{t("app.title")}</h1>
       <p>{t("auth.shell.workspace", { workspace: session.membership.workspace_display_name })}</p>
       <p>{t(`auth.role.${session.actor.roleClass}`)}</p>
+      <SignOutControl label={t("auth.sign_out")} />
     </main>
   );
 }

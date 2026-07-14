@@ -35,6 +35,7 @@ export default async function CapturePage() {
     target: t("board.target"),
     notApplicable: t("board.not_applicable"),
     site: t("board.site"),
+    signOut: t("auth.sign_out"),
     statuses: {
       scheduled: t("board.status.scheduled"),
       open: t("board.status.open"),

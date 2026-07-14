@@ -1631,6 +1631,7 @@ scope for every session until resolved.
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-14 SLICE-015C sign-out: `POST /api/auth/sign-out` revokes the cookie-carried Supabase session through the existing auth transport with `scope=local`, clears the auth/workspace cookies, and its shared client control deletes both named Cache Storage entries before redirecting to `/login`.
 - 2026-07-13 SLICE-015 UI foundation (operator ruling): Tailwind v4 is the styling layer; shadcn/ui conventions apply with only per-slice owned source copied into `core/components/ui`; `globals.css` defines the binding 48px tap target, status colors, contrast palette, and capture type scale; no other UI library is introduced.
 - 2026-07-13 SLICE-015 day-pack (operator ruling/DEC-016 item 8; amended by SLICE-015B): owner and manager packs contain all active workspace sites; supervisor scope is resolved fresh from `sites.settings.supervisor_person_ids` in the read transaction; sites order by name, windows by starts_at then window id, and assignments/persons by display name then id.
 - 2026-07-13 SLICE-015 frozen-path note: additive read-only helper `meDayPackRows` lives in existing `core/db/reads.ts`; it performs the single active-site/today-window/assignment projection and changes no write path.

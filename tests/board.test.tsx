@@ -20,6 +20,7 @@ const labels: BoardLabels = {
   target: de.board.target,
   notApplicable: de.board.not_applicable,
   site: de.board.site,
+  signOut: de.auth.sign_out,
   statuses: de.board.status,
 };
 
@@ -81,7 +82,9 @@ describe("SLICE-015 Heute board", () => {
     expect(html).toContain("Beta Standort");
     expect(html).toContain("Heute keine Zeitfenster.");
     expect(html.indexOf("Alpha Standort")).toBeLessThan(html.indexOf("Beta Standort"));
-    expect(html).not.toContain("<button");
+    expect(html).toContain(`>${de.auth.sign_out}<`);
+    expect(html).toContain("min-h-tap");
+    expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).not.toContain("<form");
   });
 
