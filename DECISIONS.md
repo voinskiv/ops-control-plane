@@ -1629,8 +1629,35 @@ scope for every session until resolved.
 
 ---
 
+### DEC-027 — 2026-07-14 — FIX-035 retry scope versus existing platform idempotency-race recovery
+
+- Status: RESOLVED
+- Raised by: FIX-035 kernel serialization-conflict retry (issue #35), before code changes
+- Question: `core/actions/kernel.ts` already restarts the whole transaction once on SQLSTATE `23505` after rolling back, solely so concurrent platform `workspace.create` invocations sharing an idempotency key can re-enter DEC-005's replay lookup after the unique partial-index race. FIX-035 requires serialization/deadlock retries "ONLY on 40001/40P01" and excludes idempotency-semantic changes. Should the existing `23505` recovery remain as the DEC-005-specific idempotency-race path while the new bounded retry policy applies only to `40001`/`40P01`, or must it be removed so no transaction restart occurs for another SQLSTATE?
+- Options considered: (A) retain the existing one-time `23505` DEC-005 recovery and add a distinct three-attempt jittered retry only for `40001`/`40P01`; this preserves platform bootstrap replay semantics, but "only" means only the new transient-conflict retry policy. (B) remove `23505` recovery and retry only `40001`/`40P01`; this satisfies a literal code-only retry set, but changes the established same-key platform-bootstrap race from replaying the winner to a persisted error. (C) redesign platform bootstrap idempotency so it needs no `23505` recovery; this changes DEC-005's internal kernel behavior and exceeds FIX-035.
+- Smallest-safe default (if allowed to proceed): none — hard blocked
+- Why this needs human sign-off: ACTION kernel and idempotency semantics are affected. Choosing wrong either violates the explicit SQLSTATE retry limit or makes concurrent `workspace.create` with the same idempotency key lose DEC-005's replay guarantee.
+- Resolution: DEC-027 — RESOLVED (operator): additive.
+
+  Ruling: FIX-035's retry policy is ADDITIVE to the existing kernel
+  recovery. The existing single 23505 restart (DEC-005 concurrent
+  idempotency replay) is preserved unchanged — same trigger, same
+  single-restart semantics. 40001/40P01 gain the new bounded retry
+  (max 3 attempts, jittered backoff) alongside it. The FIX-035
+  exclusivity clause is amended to read: no retry on any error class
+  other than these three (23505 per DEC-005, 40001/40P01 per this
+  fix). Existing DEC-005 tests stay green unmodified; if the two
+  recovery paths interact (a 23505 during a 40001 retry attempt),
+  the DEC-005 single-restart rule applies within each attempt.
+- Architecture impact: none — additive kernel recovery behavior authorized by operator
+- Approved by: Vitali Voinski (operator), 2026-07-14; transcribed verbatim by
+  the implementing agent.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-14 FIX-035 (DEC-027): serialization/deadlock SQLSTATEs `40001` and `40P01` retry the whole kernel transaction at most three times with 5ms/10ms exponential backoff plus 0–4ms jitter; the existing one-time `23505` DEC-005 restart remains available inside each attempt.
 - 2026-07-14 SLICE-015C sign-out: `POST /api/auth/sign-out` revokes the cookie-carried Supabase session through the existing auth transport with `scope=local`, clears the auth/workspace cookies, and its shared client control deletes both named Cache Storage entries before redirecting to `/login`.
 - 2026-07-13 SLICE-015 UI foundation (operator ruling): Tailwind v4 is the styling layer; shadcn/ui conventions apply with only per-slice owned source copied into `core/components/ui`; `globals.css` defines the binding 48px tap target, status colors, contrast palette, and capture type scale; no other UI library is introduced.
 - 2026-07-13 SLICE-015 day-pack (operator ruling/DEC-016 item 8; amended by SLICE-015B): owner and manager packs contain all active workspace sites; supervisor scope is resolved fresh from `sites.settings.supervisor_person_ids` in the read transaction; sites order by name, windows by starts_at then window id, and assignments/persons by display name then id.

@@ -19,7 +19,7 @@ import { Kernel } from "@core/actions/kernel";
 import { ActionRegistry, internalRegistry, registry as applicationRegistry } from "@core/actions/registry";
 import type { Actor, ResponseEnvelope } from "@core/actions/types";
 import { setAuthTransportForTests } from "@core/auth/transport";
-import { connect, type DbClient } from "@core/db/client";
+import { connect, type DbClient, type Queryable, type QueryResult, type QueryResultRow } from "@core/db/client";
 import { createKernelDb, type KernelDb } from "@core/db/kernel";
 
 let admin: DbClient;
@@ -40,6 +40,38 @@ const agent = { type: "agent", id: randomUUID(), agentCode: "test_agent", worksp
 
 function freshKey(): string {
   return `test:${randomUUID()}`;
+}
+
+function kernelWithSyntheticFailure(params: { code: string; at: "client_insert" | "commit" }): Kernel {
+  let injected = false;
+  const retryDb: KernelDb = {
+    async withClient<T>(fn: (client: Queryable) => Promise<T>): Promise<T> {
+      return kernelDb.withClient((client) => {
+        const wrappedClient: Queryable = {
+          async query<R extends QueryResultRow = QueryResultRow>(
+            text: string,
+            values?: unknown[],
+          ): Promise<QueryResult<R>> {
+            const matchesClientInsert = params.at === "client_insert" && text.startsWith("INSERT INTO clients");
+            const matchesCommit = params.at === "commit" && text === "COMMIT";
+            if (!injected && (matchesClientInsert || matchesCommit)) {
+              injected = true;
+              if (matchesCommit) {
+                // Model Postgres aborting the transaction before it reports
+                // the serialization failure, so no first-attempt writes leak.
+                await client.query("ROLLBACK");
+              }
+              throw Object.assign(new Error(`synthetic PostgreSQL ${params.code}`), { code: params.code });
+            }
+            return client.query<R>(text, values);
+          },
+        };
+        return fn(wrappedClient);
+      });
+    },
+    end: async () => undefined,
+  };
+  return new Kernel(retryDb, registry, noopUnlimitedResolver, internalRegistry);
 }
 
 async function adminInsertVerifiedRecord(): Promise<string> {
@@ -727,6 +759,40 @@ describe("kernel transaction guarantees (§6, §21.3, F13, F4)", () => {
     const id = randomUUID();
     const envelope = await kernel.dispatch(manager, { name: "test.no_audit", input: { id }, idempotencyKey: key });
     expect(envelope.status).toBe("error");
+    expect(await clientCount(id)).toBe(0);
+    expect((await invocationRow(key))?.status).toBe("error");
+  });
+
+  it("retries a synthetic serialization failure and persists only the final attempt's audit (§6, §21.3, DEC-027)", async () => {
+    const key = freshKey();
+    const id = randomUUID();
+    const retryKernel = kernelWithSyntheticFailure({ code: "40001", at: "commit" });
+
+    const envelope = await retryKernel.dispatch(manager, {
+      name: "test.client_create",
+      input: { id, name: "Retried Client" },
+      idempotencyKey: key,
+    });
+
+    expect(envelope.status).toBe("ok");
+    expect(await clientCount(id)).toBe(1);
+    const row = await invocationRow(key);
+    expect(row?.status).toBe("ok");
+    expect(await auditEventsFor(row?.id ?? "")).toHaveLength(1);
+  });
+
+  it("does not retry a non-retryable PostgreSQL error class (DEC-027)", async () => {
+    const key = freshKey();
+    const id = randomUUID();
+    const retryKernel = kernelWithSyntheticFailure({ code: "23503", at: "client_insert" });
+
+    const envelope = await retryKernel.dispatch(manager, {
+      name: "test.client_create",
+      input: { id, name: "Not Retried" },
+      idempotencyKey: key,
+    });
+
+    expect(envelope).toMatchObject({ status: "error", result: { code: "internal_error" } });
     expect(await clientCount(id)).toBe(0);
     expect((await invocationRow(key))?.status).toBe("error");
   });

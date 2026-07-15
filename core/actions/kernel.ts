@@ -29,6 +29,22 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
 }
 
+function isRetryableSerializationFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const code = (error as { code?: string }).code;
+  return code === "40001" || code === "40P01";
+}
+
+const maxSerializationAttempts = 3;
+
+async function serializationRetryBackoff(attempt: number): Promise<void> {
+  // DEC-027: short exponential backoff with 0–4ms jitter before retries.
+  const milliseconds = 5 * 2 ** (attempt - 1) + Math.floor(Math.random() * 5);
+  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function setGuc(client: Queryable, name: string, value: string): Promise<void> {
   // set_config(..., true) is transaction-local (§7).
   await client.query("SELECT set_config($1, $2, true)", [name, value]);
@@ -43,11 +59,11 @@ export class Kernel {
   ) {}
 
   async dispatch(actor: Actor, invocation: Invocation): Promise<ResponseEnvelope> {
-    return this.db.withClient((client) => this.run(this.registry, client, actor, invocation, 0));
+    return this.db.withClient((client) => this.run(this.registry, client, actor, invocation, 1, false));
   }
 
   async dispatchInternal(actor: Actor, invocation: Invocation): Promise<ResponseEnvelope> {
-    return this.db.withClient((client) => this.run(this.internalRegistry, client, actor, invocation, 0));
+    return this.db.withClient((client) => this.run(this.internalRegistry, client, actor, invocation, 1, false));
   }
 
   private async run(
@@ -55,7 +71,8 @@ export class Kernel {
     client: Queryable,
     actor: Actor,
     invocation: Invocation,
-    attempt: number,
+    serializationAttempt: number,
+    uniqueRestarted: boolean,
   ): Promise<ResponseEnvelope> {
     const hash = inputHash(invocation.input);
     let workspaceId: string | null = actor.type === "platform" ? null : actor.workspaceId;
@@ -183,7 +200,7 @@ export class Kernel {
       return stored;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
-      if (isUniqueViolation(error) && attempt === 0) {
+      if (isUniqueViolation(error) && !uniqueRestarted) {
         // Any unique violation may be a same-key race whose winner has now
         // committed — including a *domain* unique (e.g. the workspace PK/slug
         // during platform bootstrap, where the loser collides on the winner's
@@ -194,7 +211,12 @@ export class Kernel {
         // same key + different hash → typed idempotency_conflict; fresh key →
         // a genuine domain conflict that re-executes once and lands in the
         // error path below.
-        return this.run(registry, client, actor, invocation, 1);
+        return this.run(registry, client, actor, invocation, serializationAttempt, true);
+      }
+      if (isRetryableSerializationFailure(error) && serializationAttempt < maxSerializationAttempts) {
+        await serializationRetryBackoff(serializationAttempt);
+        // DEC-027: each serialization attempt gets its own DEC-005 restart.
+        return this.run(registry, client, actor, invocation, serializationAttempt + 1, false);
       }
       return this.persistError(client, actor, workspaceId, invocation, hash);
     }
