@@ -149,6 +149,7 @@ These are operator-judged product numbers. They never gate CI or a slice's Done-
       Architecture ref: §11, §10 (batch confirm), §19 Phase 1 done-means, §20.8
       Done when: IndexedDB outbox queues invocations (payload + idempotency key + occurred_at); on reconnect/background sync the client refreshes the Supabase session and completes per-request person/role/workspace validation before flushing FIFO; e2e records a window airplane-mode offline→synced in ≤3 taps from the Heute board; zero duplicate records under forced retry (§20.8); batch confirm per site works; German catalog complete for all Phase 1 surfaces; §20 1–8, 11, 12 green
       Depends on: SLICE-016, SLICE-017, SLICE-019
+      Resolve OPEN-QUESTION #36 in this slice's DEC.
 
 ## Phase 2: Exceptions / escalation / recovery
 
