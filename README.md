@@ -52,7 +52,7 @@ npm run dev -- --hostname 0.0.0.0
 
 Do not expose the server publicly. Use Tailscale or an SSH tunnel only.
 
-Open `http://127.0.0.1:3000/login` to request a magic link. Local messages are captured by the Supabase stack's Inbucket mail service; open `http://127.0.0.1:54324` to read them. The seed supplies these email values: `anna.becker@demo-gmbh.example`, `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example`. The seeded people are not linked to Supabase auth users and the seed creates no invite/link-auth records, so a magic link for one of these addresses currently ends without a dashboard membership; signed-in verification is blocked until that auth-linking contract is resolved.
+Open `http://127.0.0.1:3000/login` to request a magic link. Local messages are captured by the Supabase stack's Inbucket mail service; open `http://127.0.0.1:54324` to read them. The seed supplies these email values: `anna.becker@demo-gmbh.example`, `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example`. The seeded people are not linked to Supabase auth users and the seed creates no invite/link-auth records, so a magic link for one of these addresses currently ends without a dashboard membership; signed-in verification is blocked by [issue #40](https://github.com/voinskiv/ops-control-plane/issues/40).
 
 When signed in, `/capture` is the Heute board showing assigned active sites and today's windows. `/dashboard` shows the current workspace and role.
 
