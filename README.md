@@ -37,7 +37,15 @@ The seed creates Demo GmbH through kernel replay only. It creates an owner, a ma
 
 ## Run the app (dev)
 
-After exporting the variables in the verification sequence above, start the app:
+After exporting the variables and running `npm run db:seed` in the verification sequence above, bootstrap the seeded owner's local auth identity:
+
+```sh
+npm run dev:bootstrap
+```
+
+The command replays the existing self-invite and `person.link_auth` kernel actions for `anna.becker@demo-gmbh.example`, creates or updates the matching local Supabase user, and refuses any non-local `SUPABASE_URL`. Its fixed local fallback password is `local-dev-password`.
+
+Then start the app:
 
 ```sh
 npm run dev
@@ -52,7 +60,7 @@ npm run dev -- --hostname 0.0.0.0
 
 Do not expose the server publicly. Use Tailscale or an SSH tunnel only.
 
-Open `http://127.0.0.1:3000/login` to request a magic link. Local messages are captured by the Supabase stack's Inbucket mail service; open `http://127.0.0.1:54324` to read them. The seed supplies these email values: `anna.becker@demo-gmbh.example`, `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example`. The seeded people are not linked to Supabase auth users and the seed creates no invite/link-auth records, so a magic link for one of these addresses currently ends without a dashboard membership; signed-in verification is blocked by [issue #40](https://github.com/voinskiv/ops-control-plane/issues/40).
+Open `http://127.0.0.1:3000/login` to request a magic link for `anna.becker@demo-gmbh.example`. Local messages are captured by the Supabase stack's Inbucket mail service; open `http://127.0.0.1:54324` to read them. The seed also supplies `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example` for later invite flows.
 
 When signed in, `/capture` is the Heute board showing assigned active sites and today's windows. `/dashboard` shows the current workspace and role.
 

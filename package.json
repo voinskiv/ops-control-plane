@@ -11,6 +11,7 @@
     "start": "next start",
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed/index.ts",
+    "dev:bootstrap": "tsx db/dev-bootstrap.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
