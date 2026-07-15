@@ -43,7 +43,7 @@ After exporting the variables and running `npm run db:seed` in the verification 
 npm run dev:bootstrap
 ```
 
-The command replays the existing self-invite and `person.link_auth` kernel actions for `anna.becker@demo-gmbh.example`, creates or updates the matching local Supabase user, and refuses any non-local `SUPABASE_URL`. Its fixed local fallback password is `local-dev-password`.
+The command replays the existing self-invite and `person.link_auth` kernel actions for `anna.becker@demo-gmbh.example`, creates or updates the matching local Supabase user, and refuses any non-local `SUPABASE_URL` or `DATABASE_URL`. Its fixed local fallback password is `local-dev-password`.
 
 Then start the app:
 

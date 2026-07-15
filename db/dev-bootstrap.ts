@@ -32,21 +32,27 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-export function localSupabaseUrl(value: string): URL {
+export function localUrl(name: string, value: string): URL {
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error("SUPABASE_URL must be a valid URL");
+    throw new Error(`${name} must be a valid URL`);
   }
   if (!new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(parsed.hostname)) {
-    throw new Error("dev:bootstrap refuses non-local SUPABASE_URL");
+    throw new Error(`dev:bootstrap refuses non-local ${name}`);
   }
   return parsed;
 }
 
 export function requiredLocalSupabaseUrl(): URL {
-  return localSupabaseUrl(requiredEnv("SUPABASE_URL"));
+  return localUrl("SUPABASE_URL", requiredEnv("SUPABASE_URL"));
+}
+
+function requiredLocalDatabaseUrl(): string {
+  const value = requiredEnv("DATABASE_URL");
+  localUrl("DATABASE_URL", value);
+  return value;
 }
 
 function authAdminUsersUrl(supabaseUrl: URL): string {
@@ -152,8 +158,9 @@ function actionFailure(name: string, envelope: ResponseEnvelope): Error {
 async function main(): Promise<void> {
   // FIX-040: this guard must run before any database read, Auth call, or action dispatch.
   const supabaseUrl = requiredLocalSupabaseUrl();
-  const db = await connect(requiredEnv("DATABASE_URL"));
-  const kernelDb = createKernelDb(requiredEnv("DATABASE_URL"));
+  const databaseUrl = requiredLocalDatabaseUrl();
+  const db = await connect(databaseUrl);
+  const kernelDb = createKernelDb(databaseUrl);
   const kernel = new Kernel(kernelDb, registry, noopUnlimitedResolver, internalRegistry);
 
   try {
