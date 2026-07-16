@@ -1,6 +1,6 @@
 # ops-control-plane
 
-## Fresh clone: local Phase 0 verification
+## Fresh clone: verify current main locally
 
 Prerequisites: Git, Node.js 24, npm, and a Docker-compatible daemon reachable by the Supabase CLI (local or through an explicitly configured remote Docker connection). The repository pins the Supabase CLI and all Node dependencies in `package-lock.json`.
 
@@ -30,7 +30,7 @@ npm run lint
 npm test
 ```
 
-The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000` but is made explicit above. The local CLI output supplies every secret value. The excluded services are not used in Phase 0; Postgres, Auth, API/Kong, metadata, mail, and Storage remain available.
+The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000` but is made explicit above. The local CLI output supplies every secret value. The excluded services are not used by the current stack; Postgres, Auth, API/Kong, metadata, mail, and Storage remain available.
 
 The test suite has two database modes:
 
@@ -51,7 +51,7 @@ The test suite has two database modes:
 
   `TEST_DATABASE_URL` targets this disposable database and makes the harness skip its own database provisioning and teardown. The schema, RLS, and immutability suites are most meaningful in this mode: the harness comment in `tests/helpers/global-setup.ts` documents the explicit `app_kernel` membership needed to exercise local Supabase's PostgreSQL role semantics. The run applies migrations and leaves test fixtures behind, so it consumes the database's freshness; reset it again before another Supabase-verification run or before building normal development state.
 
-The seed creates Demo GmbH through kernel replay only. It creates an owner, a manager, two supervisors, six display-name-only workers, two clients, and four sites; three sites are active and one remains draft. Seeded people are unlinked (`auth_user_id` remains `NULL`). Phase 1 now also replays three commitments (coverage, output, and service scope) and generates their windows across the local rolling horizon.
+The pinned demo fixture creates Demo GmbH through kernel replay only. It creates an owner, a manager, two supervisors, six display-name-only workers, two clients, and four sites; three sites are active and one remains draft. Seeded people are unlinked (`auth_user_id` remains `NULL`). It also replays three commitments (coverage, output, and service scope) and generates their windows across the local rolling horizon.
 
 ## Run the app (dev)
 
