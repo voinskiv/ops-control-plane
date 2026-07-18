@@ -11,7 +11,7 @@ import { createKernelDb } from "../core/db/kernel";
 const DEMO_WORKSPACE_NAME = "Demo GmbH";
 const DEMO_OWNER_EMAIL = "anna.becker@demo-gmbh.example";
 export const LOCAL_DEV_PASSWORD = "local-dev-password";
-export const LOCAL_INBUCKET_URL = "http://127.0.0.1:54324";
+export const LOCAL_MAILPIT_URL = "http://127.0.0.1:54324";
 
 interface SeededOwner {
   personId: string;
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
     let owner = await seededOwner(db);
     if (owner.authUserId !== null) {
       process.stdout.write(`Demo owner is already linked: ${DEMO_OWNER_EMAIL}\n`);
-      process.stdout.write(`Inbucket: ${LOCAL_INBUCKET_URL}\n`);
+      process.stdout.write(`Mailpit: ${LOCAL_MAILPIT_URL}\n`);
       return;
     }
 
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
 
     process.stdout.write(`Sign in with: ${DEMO_OWNER_EMAIL}\n`);
     process.stdout.write(`Local fallback password: ${LOCAL_DEV_PASSWORD}\n`);
-    process.stdout.write(`Inbucket: ${LOCAL_INBUCKET_URL}\n`);
+    process.stdout.write(`Mailpit: ${LOCAL_MAILPIT_URL}\n`);
   } finally {
     await Promise.all([db.end(), kernelDb.end()]);
   }
