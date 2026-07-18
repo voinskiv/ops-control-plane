@@ -76,7 +76,7 @@ export NEXT_PUBLIC_APP_URL="http://<reachable-tailscale-address>:3000"
 npm run dev -- --hostname 0.0.0.0
 ```
 
-Note: magic-link sign-in does not currently complete over a direct Tailscale address (#43); use an SSH tunnel (`ssh -L 3000:localhost:3000 -L 54324:localhost:54324 <host>`) and the 127.0.0.1 URLs below instead.
+Note: magic-link sign-in does not currently complete over a direct Tailscale address (#43); use an SSH tunnel (`ssh -L 3000:localhost:3000 -L 54321:localhost:54321 -L 54324:localhost:54324 <host>`) and the 127.0.0.1 URLs below instead.
 
 Do not expose the server publicly. Use Tailscale or an SSH tunnel only. The local Supabase stack binds its published development services to `0.0.0.0` with shared default credentials. On any machine with a public interface, firewall the development ports (`3000`, `54321`, `54322`, and `54324`) to Tailscale/loopback only; never expose them publicly.
 
