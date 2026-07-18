@@ -1655,8 +1655,130 @@ scope for every session until resolved.
 
 ---
 
+### DEC-028 — 2026-07-15 — FIX-040 local dev bootstrap versus invite-bound person.link_auth
+
+- Status: RESOLVED
+- Raised by: FIX-040 dev auth bootstrap (issue #40), before code changes
+- Question: FIX-040 requires a dev-only script to link the seeded owner by
+  dispatching the existing kernel-internal `person.link_auth` operation, but
+  the seed intentionally creates no `person.invite` audit record and the
+  current operation rejects this exact state as `invite_ineligible`. Which
+  authorized mechanism may establish the seeded owner's link without creating
+  a second write path or changing production invite-acceptance behavior?
+- Options considered: (A) amend `person.link_auth` to permit the fixed local
+  seed owner under a local-only guard; this preserves kernel dispatch and audit
+  but changes the operation's authorization semantics beyond invite acceptance.
+  (B) have the bootstrap create the required existing invite evidence and then
+  dispatch `person.link_auth`; this preserves the operation's current rule but
+  invokes the invite flow and may send an invitation, contrary to FIX-040's
+  no-invite-flow-change boundary. (C) add a separate local-only internal
+  operation for the bootstrap; this keeps `person.link_auth` unchanged but
+  adds a new action, which FIX-040 excludes. (D) write `persons.auth_user_id`
+  directly; this is a second mutation path and violates both §5 and FIX-040.
+- Smallest-safe default (if allowed to proceed): none — hard blocked
+- Why this needs human sign-off: SECURITY/AUTHZ and ACTION kernel semantics
+  are affected. The wrong exception could turn a local tool into an
+  invite-bypass access grant or weaken the audited, invite-bound identity-link
+  rule.
+- Resolution: DEC-028 — RESOLVED (operator): replay the real invite flow;
+  do not weaken the guard.
+
+  Ruling:
+  1. person.link_auth's invite-eligibility guard is correct and
+     remains unchanged. No dev bypass, no guard relaxation, no
+     direct DB writes, no new action.
+  2. The dev:bootstrap script instead sequences EXISTING actions
+     through the kernel: first dispatch the existing person invite
+     action for the seeded owner (internal/system dispatch, exactly
+     as other system-initiated flows do), producing the invite
+     audit trail that makes link_auth eligible; then proceed as
+     FIX-040 task (a) specified. The invite email lands in Inbucket
+     like any other local mail — acceptable and expected.
+  3. If the invite action's transport call cannot complete against
+     the local stack headlessly, or if the invite action itself
+     cannot be dispatched via internal/system actor without
+     behavioral change to that action, STOP again with the specific
+     obstacle — do not adapt any action's semantics to fit the
+     script.
+  4. Idempotence requirement extended accordingly: a rerun must
+     tolerate an existing invite (already-invited and already-linked
+     both report cleanly and exit 0).
+  5. All other FIX-040 terms unchanged, including the environment
+     guard (task b) and the full manual evidence transcript —
+     which now must show the invite step in the sequence.
+- Architecture impact: none — dev tooling sequencing existing
+  actions; no contract, guard, or stored-format changes.
+- Approved by: Vitali Voinski (operator), 2026-07-15; transcribed verbatim by
+  the implementing agent.
+
+---
+
+### DEC-029 — 2026-07-15 — FIX-040 system dispatch of person.invite
+
+- Status: RESOLVED
+- Raised by: FIX-040 dev auth bootstrap (issue #40), after DEC-028 ruling and
+  before code changes
+- Question: DEC-028 directs the bootstrap to dispatch the existing
+  `person.invite` action with an internal/system actor. The current internal
+  registry contains only `person.link_auth`, so `dispatchInternal` for
+  `person.invite` returns `unknown_action`; the public registry contains
+  `person.invite`, but its actor contract is `{ minHumanRole: "manager" }`, so
+  a system actor is rejected as `unauthorized`. What mechanism is authorized
+  for the bootstrap to replay the real invite action without changing action
+  semantics?
+- Options considered: (A) add `person.invite` to the internal registry and
+  permit the system actor in its actor contract; this enables the requested
+  sequence but changes a public action's actor authorization semantics. (B)
+  dispatch `person.invite` as a simulated owner person actor, as the seed does
+  for ordinary setup actions; this preserves the action definition but is not
+  the DEC-028-required internal/system dispatch and represents a system tool as
+  a human actor. (C) use a dedicated new internal operation or direct SQL;
+  both violate DEC-028 and FIX-040. (D) do not bootstrap the link; this leaves
+  issue #40 unresolved.
+- Smallest-safe default (if allowed to proceed): none — hard blocked
+- Why this needs human sign-off: SECURITY/AUTHZ and ACTION kernel semantics
+  are affected. Adding a system actor to an invitation action can create a
+  durable non-human access-grant capability; simulating a human actor would
+  change audit attribution and violates the stated ruling.
+- Resolution: DEC-029 — RESOLVED (operator): dispatch as the seeded owner's
+  constructed person actor via the public registry.
+
+  Ruling:
+  1. No registry changes, no action changes. person.invite is not
+     added to the internal registry.
+  2. The dev:bootstrap script constructs the seeded owner's person
+     actor (type person, the seeded owner's person_id, role_class
+     owner, the seeded workspace_id) and dispatches person.invite
+     through the PUBLIC registry via kernel.dispatch — the same
+     mechanism the test suite already uses throughout
+     tests/actions/. Authorization evaluates normally (owner role
+     passes the existing guard); the audit trail records the owner
+     as inviting actor. Target of the invite: the seeded owner
+     themself.
+  3. STOP conditions: if person.invite guards against self-invite,
+     or the seeded owner fails any other existing eligibility check
+     as target, STOP with the specific guard — do not restructure
+     who invites whom without a ruling. If constructing the actor
+     requires exporting anything not already exported, that export
+     is an additive read-only helper — allowed and recorded; if it
+     requires more, STOP.
+  4. The environment guard (FIX-040 task b) now protects an actor-
+     constructing script — it must run before ANY dispatch, not
+     only before Supabase calls.
+  5. All other FIX-040 and DEC-028 terms unchanged, including
+     idempotence across the now three-step chain (invite present /
+     auth user present / already linked — each rerun-safe) and the
+     full manual evidence transcript.
+- Architecture impact: none — dev tooling using the kernel's
+  existing dispatch API with an existing authorization path.
+- Approved by: Vitali Voinski (operator), 2026-07-15; transcribed verbatim by
+  the implementing agent.
+
+---
+
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-15 FIX-040 (DEC-028/029): the local-only bootstrap first validates both `SUPABASE_URL` and `DATABASE_URL` as localhost/127.0.0.1/::1, then reads the seeded active owner, replays its existing self-invite as that owner through the public kernel, ensures a confirmed local Auth user with the documented `local-dev-password`, and dispatches the unchanged internal link action.
 - 2026-07-14 FIX-035 (DEC-027): serialization/deadlock SQLSTATEs `40001` and `40P01` retry the whole kernel transaction at most three times with 5ms/10ms exponential backoff plus 0–4ms jitter; the existing one-time `23505` DEC-005 restart remains available inside each attempt.
 - 2026-07-14 SLICE-015C sign-out: `POST /api/auth/sign-out` revokes the cookie-carried Supabase session through the existing auth transport with `scope=local`, clears the auth/workspace cookies, and its shared client control deletes both named Cache Storage entries before redirecting to `/login`.
 - 2026-07-13 SLICE-015 UI foundation (operator ruling): Tailwind v4 is the styling layer; shadcn/ui conventions apply with only per-slice owned source copied into `core/components/ui`; `globals.css` defines the binding 48px tap target, status colors, contrast palette, and capture type scale; no other UI library is introduced.
