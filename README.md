@@ -1,6 +1,6 @@
 # ops-control-plane
 
-## Fresh clone: verify current main locally
+## Quick start
 
 Prerequisites: Git, Node.js 24, npm, and a Docker-compatible daemon reachable by the Supabase CLI (local or through an explicitly configured remote Docker connection). The repository pins the Supabase CLI and all Node dependencies in `package-lock.json`.
 
@@ -21,16 +21,41 @@ export DATABASE_URL="$DB_URL"
 export SUPABASE_URL="$API_URL"
 export SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
-export NEXT_PUBLIC_APP_URL="http://127.0.0.1:3000"
 
 npm run db:migrate
-npm run db:seed
 npm run typecheck
 npm run lint
 npm test
+
+npm run db:seed
+npm run dev:bootstrap
+npm run dev
 ```
 
-The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000` but is made explicit above. The local CLI output supplies every secret value. The excluded services are not used by the current stack; Postgres, Auth, API/Kong, metadata, mail, and Storage remain available.
+Remote access uses an SSH tunnel:
+
+```sh
+ssh -L 3000:localhost:3000 -L 54321:localhost:54321 -L 54324:localhost:54324 <host>
+```
+
+All URLs below then work from the remote browser as-is.
+
+Open `http://localhost:3000/login` to request a magic link for `anna.becker@demo-gmbh.example`. Local messages are captured by the Supabase stack's Mailpit service; open `http://localhost:54324` to read them. The fixed local fallback password is `local-dev-password`.
+
+## Details
+
+### Application and local services
+
+The required application variables are `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`; `NEXT_PUBLIC_APP_URL` defaults to `http://localhost:3000`. The local CLI output supplies every secret value. The excluded services are not used by the current stack; Postgres, Auth, API/Kong, metadata, mail, and Storage remain available.
+
+`npm run dev:bootstrap` replays the existing self-invite and `person.link_auth` kernel actions for `anna.becker@demo-gmbh.example`, creates or updates the matching local Supabase user, and refuses any non-local `SUPABASE_URL` or `DATABASE_URL`.
+
+Next uses port 3000 and binds to `0.0.0.0` by default. When signed in, `/capture` is the Heute board showing assigned active sites and today's windows. `/dashboard` shows the current workspace and role.
+
+The two `SUPABASE_AUTH_EXTERNAL_GOOGLE_*` warnings at stack start are expected.
+Setting those variables with a Google OAuth development client enables Google sign-in locally; magic link needs nothing.
+
+### Test database modes
 
 The test suite has two database modes:
 
@@ -51,37 +76,16 @@ The test suite has two database modes:
 
   `TEST_DATABASE_URL` targets this disposable database and makes the harness skip its own database provisioning and teardown. The schema, RLS, and immutability suites are most meaningful in this mode: the harness comment in `tests/helpers/global-setup.ts` documents the explicit `app_kernel` membership needed to exercise local Supabase's PostgreSQL role semantics. The run applies migrations and leaves test fixtures behind, so it consumes the database's freshness; reset it again before another Supabase-verification run or before building normal development state.
 
+### Reset semantics
+
+Stop the local stack with `npx supabase stop --workdir db`; plain `stop` preserves its data volumes. For a true reset, run `npx supabase stop --workdir db --no-backup`, then rerun the Quick start sequence from `npx supabase start --workdir db --exclude edge-runtime,imgproxy,realtime,studio,vector` through `npm run db:seed`.
+
+### Security and ports
+
+Do not expose the server publicly. Use the SSH tunnel above for remote access. The local Supabase stack binds its published development services to `0.0.0.0` with shared default credentials. On any machine with a public interface, firewall the development ports (`3000`, `54321`, `54322`, and `54324`) to Tailscale/loopback only; never expose them publicly.
+
+### Demo fixture
+
 The pinned demo fixture creates Demo GmbH through kernel replay only. It creates an owner, a manager, two supervisors, six display-name-only workers, two clients, and four sites; three sites are active and one remains draft. Seeded people are unlinked (`auth_user_id` remains `NULL`). It also replays three commitments (coverage, output, and service scope) and generates their windows across the local rolling horizon.
 
-## Run the app (dev)
-
-After exporting the variables and running `npm run db:seed` in the verification sequence above, bootstrap the seeded owner's local auth identity:
-
-```sh
-npm run dev:bootstrap
-```
-
-The command replays the existing self-invite and `person.link_auth` kernel actions for `anna.becker@demo-gmbh.example`, creates or updates the matching local Supabase user, and refuses any non-local `SUPABASE_URL` or `DATABASE_URL`. Its fixed local fallback password is `local-dev-password`.
-
-Then start the app:
-
-```sh
-npm run dev
-```
-
-Next uses port 3000 and binds to `0.0.0.0` by default. For remote or Tailscale access, bind explicitly and set the public app URL before starting it, using the address that the remote browser will open:
-
-```sh
-export NEXT_PUBLIC_APP_URL="http://<reachable-tailscale-address>:3000"
-npm run dev -- --hostname 0.0.0.0
-```
-
-Note: magic-link sign-in does not currently complete over a direct Tailscale address (#43); use an SSH tunnel (`ssh -L 3000:localhost:3000 -L 54321:localhost:54321 -L 54324:localhost:54324 <host>`) and the 127.0.0.1 URLs below instead.
-
-Do not expose the server publicly. Use Tailscale or an SSH tunnel only. The local Supabase stack binds its published development services to `0.0.0.0` with shared default credentials. On any machine with a public interface, firewall the development ports (`3000`, `54321`, `54322`, and `54324`) to Tailscale/loopback only; never expose them publicly.
-
-Open `http://127.0.0.1:3000/login` to request a magic link for `anna.becker@demo-gmbh.example`. Local messages are captured by the Supabase stack's Mailpit service; open `http://127.0.0.1:54324` to read them. The seed also supplies `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example` for later invite flows.
-
-When signed in, `/capture` is the Heute board showing assigned active sites and today's windows. `/dashboard` shows the current workspace and role.
-
-Stop the local stack with `npx supabase stop --workdir db`; plain `stop` preserves its data volumes. For a true reset, run `npx supabase stop --workdir db --no-backup`, then rerun the verification sequence from `npx supabase start --workdir db --exclude edge-runtime,imgproxy,realtime,studio,vector` through `npm run db:seed`.
+The seed also supplies `lukas.hoffmann@demo-gmbh.example`, `miriam.koch@demo-gmbh.example`, and `daniel.wagner@demo-gmbh.example` for later invite flows.
