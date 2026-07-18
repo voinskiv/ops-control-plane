@@ -38,7 +38,7 @@ Remote access uses an SSH tunnel:
 ssh -L 3000:localhost:3000 -L 54321:localhost:54321 -L 54324:localhost:54324 <host>
 ```
 
-All URLs below then work from the remote browser as-is. Direct Tailscale magic-link sign-in remains tracked in #43 (facet 1).
+All URLs below then work from the remote browser as-is.
 
 Open `http://localhost:3000/login` to request a magic link for `anna.becker@demo-gmbh.example`. Local messages are captured by the Supabase stack's Mailpit service; open `http://localhost:54324` to read them. The fixed local fallback password is `local-dev-password`.
 
