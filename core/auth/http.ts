@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { DashboardAuth, SessionResult } from "./session";
 import { cookieHeader, GOOGLE_INVITE_STATE_COOKIE } from "./session";
+import { appOrigin } from "./transport";
 import type { ResponseEnvelope } from "../actions/types";
 
 const tokenBody = z
@@ -78,11 +79,12 @@ export async function handleMagicLinkPost(auth: DashboardAuth, request: Request)
   if (envelope.status !== "ok") {
     return Response.json(envelope, { status: statusFor(envelope) });
   }
-  return Response.redirect(new URL("/login?sent=1", request.url), 303);
+  return new Response(null, { status: 303, headers: { Location: "/login?sent=1" } });
 }
 
 export function handleGoogleSignInGet(auth: DashboardAuth, request: Request): Response {
-  return Response.redirect(auth.startGoogleSignIn(request.url), 303);
+  void request;
+  return Response.redirect(auth.startGoogleSignIn(appOrigin()), 303);
 }
 
 export async function handleGoogleInvitePost(auth: DashboardAuth, request: Request): Promise<Response> {
@@ -90,7 +92,7 @@ export async function handleGoogleInvitePost(auth: DashboardAuth, request: Reque
   const workspaceId = form?.get("workspace_id");
   const personId = form?.get("person_id");
   const started = auth.startGoogleInvite(
-    request.url,
+    appOrigin(),
     typeof workspaceId === "string" ? workspaceId : "",
     typeof personId === "string" ? personId : "",
   );
@@ -100,7 +102,7 @@ export async function handleGoogleInvitePost(auth: DashboardAuth, request: Reque
       { status: 400 },
     );
   }
-  const response = Response.redirect(started.location, 303);
+  const response = new Response(null, { status: 303, headers: { Location: started.location } });
   for (const cookie of started.cookies) {
     response.headers.append("set-cookie", cookieHeader(cookie));
   }
