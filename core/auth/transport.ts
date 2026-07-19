@@ -45,7 +45,8 @@ function requiredEnv(name: string): string {
 }
 
 export function appOrigin(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? "http://localhost:3000";
+  return process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL === undefined ? "http://localhost:3000" : `https://${process.env.VERCEL_URL}`);
 }
 
 function authenticationMethods(accessToken: string): string[] {

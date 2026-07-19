@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getAuthTransport, setAuthTransportForTests } from "@core/auth/transport";
+import { appOrigin, getAuthTransport, setAuthTransportForTests } from "@core/auth/transport";
 
 function accessToken(method: string): string {
   const payload = Buffer.from(JSON.stringify({ amr: [{ method, timestamp: 1 }] })).toString("base64url");
@@ -11,6 +11,18 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   setAuthTransportForTests(null);
+});
+
+describe("appOrigin", () => {
+  it("uses a secure Vercel origin unless the explicit application URL is set", () => {
+    vi.stubEnv("VERCEL_URL", "preview-123.vercel.app");
+
+    expect(appOrigin()).toBe("https://preview-123.vercel.app");
+
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+
+    expect(appOrigin()).toBe("https://app.example.test");
+  });
 });
 
 describe("Supabase Auth identity parsing (DEC-013 item 7, DEC-014 item 1)", () => {
