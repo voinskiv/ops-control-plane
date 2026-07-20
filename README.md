@@ -55,6 +55,10 @@ Next uses port 3000 and binds to `0.0.0.0` by default. When signed in, `/capture
 The two `SUPABASE_AUTH_EXTERNAL_GOOGLE_*` warnings at stack start are expected.
 Setting those variables with a Google OAuth development client enables Google sign-in locally; magic link needs nothing.
 
+### Deployment
+
+Set `NEXT_PUBLIC_APP_URL` to the canonical production `https` URL. Preview deployments fall back to Vercel's `VERCEL_URL`; in the hosted Supabase project's Auth URL Configuration, keep the production URL as the Site URL and allow the corresponding Vercel preview wildcard (for example, `https://*-<team-or-account-slug>.vercel.app/**`) in Redirect URLs.
+
 ### Test database modes
 
 The test suite has two database modes:
