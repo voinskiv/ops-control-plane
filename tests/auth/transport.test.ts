@@ -23,6 +23,12 @@ describe("appOrigin", () => {
 
     expect(appOrigin()).toBe("https://app.example.test");
   });
+
+  it("falls back to localhost when the Vercel URL is empty", () => {
+    vi.stubEnv("VERCEL_URL", "");
+
+    expect(appOrigin()).toBe("http://localhost:3000");
+  });
 });
 
 describe("Supabase Auth identity parsing (DEC-013 item 7, DEC-014 item 1)", () => {
