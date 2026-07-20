@@ -82,3 +82,10 @@ QUALITY GATES
 - Every PR must cite the specific ARCHITECTURE.md sentence or table row that
   requires the behavior — a section that merely mentions the topic does not
   count. No citation means out of scope — do not do it.
+
+## Browser Automation
+
+Use `agent-browser` for web automation and visual verification of UI
+changes (see the agent-browser skill for the full workflow). The dev
+server runs at http://localhost:3000 — use it; do not start a second
+instance.
