@@ -14,3 +14,5 @@ CLI:
 ```bash
 agent-browser skills get core
 ```
+
+Run `agent-browser skills list` to see other available skills (electron, slack, sandbox, etc.).
