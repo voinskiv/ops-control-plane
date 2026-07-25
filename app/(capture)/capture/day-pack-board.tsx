@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@core/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@core/components/ui/card";
@@ -10,6 +10,7 @@ import { SignOutControl } from "../../sign-out-control";
 
 type WindowStatus = MeResponse["sites"][number]["windows"][number]["status"];
 
+// Temporary v1 mirror of DEFAULT_WORKSPACE_SETTINGS.tz. Remove when timezone formatting is centralized through next-intl.
 const WORKSPACE_TIME_ZONE = "Europe/Berlin";
 
 export interface BoardLabels {
@@ -76,10 +77,8 @@ export function DayPackBoard({
 }) {
   const [pack, setPack] = useState(initialPack);
   const [offline, setOffline] = useState(false);
-  const [wallClockMounted, setWallClockMounted] = useState(false);
 
   useEffect(() => {
-    startTransition(() => setWallClockMounted(true));
     let active = true;
     const refresh = async (): Promise<void> => {
       try {
@@ -170,9 +169,7 @@ export function DayPackBoard({
                         <div className="min-w-0">
                           <CardTitle className="text-window-title font-bold">{window.title}</CardTitle>
                           <p className="mt-1 text-base font-semibold tabular-nums">
-                            {wallClockMounted
-                              ? `${wallClock(window.starts_at, locale, WORKSPACE_TIME_ZONE)}–${wallClock(window.ends_at, locale, WORKSPACE_TIME_ZONE)}`
-                              : "--:--–--:--"}
+                            {`${wallClock(window.starts_at, locale, WORKSPACE_TIME_ZONE)}–${wallClock(window.ends_at, locale, WORKSPACE_TIME_ZONE)}`}
                           </p>
                         </div>
                         <Badge className={statusStyles[window.status]}>{labels.statuses[window.status]}</Badge>
