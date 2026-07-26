@@ -54,6 +54,28 @@ const catalogJsxAttributesPlugin = {
   },
 };
 
+const ambientDateTimePlugin = {
+  rules: {
+    "warn-bare-to-locale-string": {
+      meta: {
+        type: "problem",
+        schema: [],
+        messages: {
+          ambient:
+            "Bare toLocaleString may use the ambient timezone; route date/time formatting through app/date-time-format.ts.",
+        },
+      },
+      create(context) {
+        return {
+          "CallExpression[callee.property.name='toLocaleString']"(node) {
+            context.report({ node, messageId: "ambient" });
+          },
+        };
+      },
+    },
+  },
+};
+
 // §20.5: the db client may only be imported inside core/db — it is "the only
 // db import site" (§19). Patterns cover the clients named by the architecture
 // (Drizzle, Supabase) and the underlying Postgres drivers.
@@ -102,6 +124,29 @@ const eslintConfig = [
       // sees goes through the i18n catalog (§15).
       "react/jsx-no-literals": "error",
       "catalog-jsx-attributes/no-user-facing-literals": "error",
+    },
+  },
+  {
+    files: ["app/**/*.{ts,tsx}"],
+    ignores: ["app/date-time-format.ts"],
+    plugins: {
+      "ambient-date-time": ambientDateTimePlugin,
+    },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+          message:
+            "Use app/date-time-format.ts with an explicit workspace timeZone instead of Intl.DateTimeFormat.",
+        },
+        {
+          selector: "CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]",
+          message:
+            "Use app/date-time-format.ts with an explicit workspace timeZone instead of date/time toLocale methods.",
+        },
+      ],
+      "ambient-date-time/warn-bare-to-locale-string": "warn",
     },
   },
 ];
