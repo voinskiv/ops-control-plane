@@ -15,8 +15,8 @@ export function formatCivilDate(
   _timeZone: string,
   options: ExplicitTimeZoneOptions,
 ): string {
-  // Civil dates have no workspace offset to apply. UTC anchoring preserves
-  // their calendar fields while the shared API still requires a timeZone.
+  // `_timeZone` is intentionally accepted but unused to keep the civil-date
+  // and instant formatter APIs uniform. UTC anchoring preserves civil fields.
   return new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" }).format(
     new Date(`${value}T00:00:00Z`),
   );
