@@ -1,5 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
-
 type ExplicitTimeZoneOptions = Omit<Intl.DateTimeFormatOptions, "timeZone">;
 
 export function formatInstant(
@@ -14,10 +12,12 @@ export function formatInstant(
 export function formatCivilDate(
   value: string,
   locale: string,
-  timeZone: string,
+  _timeZone: string,
   options: ExplicitTimeZoneOptions,
 ): string {
-  // A PlainDate has no instant to shift across a calendar boundary. The
-  // explicit timeZone keeps every display formatter on the same required API.
-  return Temporal.PlainDate.from(value).toLocaleString(locale, { ...options, timeZone });
+  // Civil dates have no workspace offset to apply. UTC anchoring preserves
+  // their calendar fields while the shared API still requires a timeZone.
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" }).format(
+    new Date(`${value}T00:00:00Z`),
+  );
 }
