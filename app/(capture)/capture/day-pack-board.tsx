@@ -10,6 +10,9 @@ import { SignOutControl } from "../../sign-out-control";
 
 type WindowStatus = MeResponse["sites"][number]["windows"][number]["status"];
 
+// Temporary v1 mirror of DEFAULT_WORKSPACE_SETTINGS.tz. Remove when timezone formatting is centralized through next-intl.
+const WORKSPACE_TIME_ZONE = "Europe/Berlin";
+
 export interface BoardLabels {
   title: string;
   eyebrow: string;
@@ -34,22 +37,22 @@ const statusStyles: Record<WindowStatus, string> = {
   closed: "bg-status-closed text-status-closed-foreground",
 };
 
-function wallClock(value: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+function wallClock(value: string, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(value));
 }
 
-function localDay(value: string, locale: string): string {
+function localDay(value: string, locale: string, timeZone: string): string {
   return new Intl.DateTimeFormat(locale, {
     weekday: "long",
     day: "2-digit",
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone,
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function generatedAt(value: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+function generatedAt(value: string, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short", timeZone }).format(new Date(value));
 }
 
 function targetLabel(
@@ -133,7 +136,7 @@ export function DayPackBoard({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-board-title leading-none font-bold tracking-tight">{labels.title}</h1>
-            <p className="mt-2 text-lg font-semibold capitalize">{localDay(pack.date, locale)}</p>
+            <p className="mt-2 text-lg font-semibold capitalize">{localDay(pack.date, locale, WORKSPACE_TIME_ZONE)}</p>
           </div>
           <div className="flex items-center gap-3">
             <p className="text-sm font-medium text-muted-foreground">{labels.workspace}</p>
@@ -141,7 +144,7 @@ export function DayPackBoard({
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          {`${labels.updated}: `}<time dateTime={pack.generated_at}>{generatedAt(pack.generated_at, locale)}</time>
+          {`${labels.updated}: `}<time dateTime={pack.generated_at}>{generatedAt(pack.generated_at, locale, WORKSPACE_TIME_ZONE)}</time>
         </p>
       </header>
 
@@ -166,7 +169,7 @@ export function DayPackBoard({
                         <div className="min-w-0">
                           <CardTitle className="text-window-title font-bold">{window.title}</CardTitle>
                           <p className="mt-1 text-base font-semibold tabular-nums">
-                            {`${wallClock(window.starts_at, locale)}–${wallClock(window.ends_at, locale)}`}
+                            {`${wallClock(window.starts_at, locale, WORKSPACE_TIME_ZONE)}–${wallClock(window.ends_at, locale, WORKSPACE_TIME_ZONE)}`}
                           </p>
                         </div>
                         <Badge className={statusStyles[window.status]}>{labels.statuses[window.status]}</Badge>

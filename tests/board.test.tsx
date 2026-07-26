@@ -88,6 +88,33 @@ describe("SLICE-015 Heute board", () => {
     expect(html).not.toContain("<form");
   });
 
+  it("renders generated_at in the workspace timezone independent of the runtime timezone", () => {
+    const runtimeTimeZone = process.env.TZ;
+    process.env.TZ = "UTC";
+
+    try {
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("UTC");
+
+      const html = renderToStaticMarkup(
+        <DayPackBoard
+          initialPack={{ ...pack, generated_at: "2026-07-13T06:00:00.000Z" }}
+          labels={labels}
+          locale="de"
+        />,
+      );
+
+      expect(html).toContain('<time dateTime="2026-07-13T06:00:00.000Z">13.07.26, 08:00</time>');
+      expect(html).toContain("06:00–14:00");
+      expect(html).toContain("Montag, 13. Juli 2026");
+    } finally {
+      if (runtimeTimeZone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = runtimeTimeZone;
+      }
+    }
+  });
+
   it("ships an optional-install manifest with icons and standalone display", () => {
     expect(manifest()).toMatchObject({
       name: de.app.title,
