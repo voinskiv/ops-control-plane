@@ -3,7 +3,7 @@ import { captureAllowed } from "@core/auth/surface";
 import { meResponseSchema } from "@core/reads/me";
 import { getReads } from "@core/reads/runtime";
 import { cookies } from "next/headers";
-import { getLocale, getTranslations } from "next-intl/server";
+import { getLocale, getTimeZone, getTranslations } from "next-intl/server";
 import { forbidden, redirect } from "next/navigation";
 
 import { DayPackBoard, type BoardLabels } from "./day-pack-board";
@@ -18,9 +18,10 @@ export default async function CapturePage() {
   if (!captureAllowed(session.actor.roleClass)) {
     forbidden();
   }
-  const [t, locale, read] = await Promise.all([
+  const [t, locale, timeZone, read] = await Promise.all([
     getTranslations(),
     getLocale(),
+    getTimeZone(),
     getReads().dispatch(session.actor, "me", {}),
   ]);
   if (!read.ok) throw new Error("authenticated me read failed");
@@ -45,5 +46,12 @@ export default async function CapturePage() {
       closed: t("board.status.closed"),
     },
   };
-  return <DayPackBoard initialPack={meResponseSchema.parse(read.data)} labels={labels} locale={locale} />;
+  return (
+    <DayPackBoard
+      initialPack={meResponseSchema.parse(read.data)}
+      labels={labels}
+      locale={locale}
+      timeZone={timeZone}
+    />
+  );
 }

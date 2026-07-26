@@ -73,7 +73,9 @@ const pack: MeResponse = {
 
 describe("SLICE-015 Heute board", () => {
   it("renders catalog-labelled windows grouped by site without capture controls", () => {
-    const html = renderToStaticMarkup(<DayPackBoard initialPack={pack} labels={labels} locale="de" />);
+    const html = renderToStaticMarkup(
+      <DayPackBoard initialPack={pack} labels={labels} locale="de" timeZone="Europe/Berlin" />,
+    );
     expect(html).toContain(">Heute<");
     expect(html).toContain("Alpha Standort");
     expect(html).toContain("Frühschicht");
@@ -88,24 +90,35 @@ describe("SLICE-015 Heute board", () => {
     expect(html).not.toContain("<form");
   });
 
-  it("renders generated_at in the workspace timezone independent of the runtime timezone", () => {
+  it("pins identical server/client markup independent of a non-Berlin ambient timezone", () => {
     const runtimeTimeZone = process.env.TZ;
-    process.env.TZ = "UTC";
 
     try {
-      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("UTC");
-
-      const html = renderToStaticMarkup(
+      process.env.TZ = "UTC";
+      const serverHtml = renderToStaticMarkup(
         <DayPackBoard
           initialPack={{ ...pack, generated_at: "2026-07-13T06:00:00.000Z" }}
           labels={labels}
           locale="de"
+          timeZone="Europe/Berlin"
         />,
       );
 
-      expect(html).toContain('<time dateTime="2026-07-13T06:00:00.000Z">13.07.26, 08:00</time>');
-      expect(html).toContain("06:00–14:00");
-      expect(html).toContain("Montag, 13. Juli 2026");
+      process.env.TZ = "America/Los_Angeles";
+      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("America/Los_Angeles");
+      const clientHtml = renderToStaticMarkup(
+        <DayPackBoard
+          initialPack={{ ...pack, generated_at: "2026-07-13T06:00:00.000Z" }}
+          labels={labels}
+          locale="de"
+          timeZone="Europe/Berlin"
+        />,
+      );
+
+      expect(clientHtml).toBe(serverHtml);
+      expect(serverHtml).toContain('<time dateTime="2026-07-13T06:00:00.000Z">13.07.26, 08:00</time>');
+      expect(serverHtml).toContain("06:00–14:00");
+      expect(serverHtml).toContain("Montag, 13. Juli 2026");
     } finally {
       if (runtimeTimeZone === undefined) {
         delete process.env.TZ;

@@ -1778,6 +1778,7 @@ scope for every session until resolved.
 
 ## Implementation-detail notes (one-liners per AGENTS.md AMBIGUITY; details in each PR's "Decisions made")
 
+- 2026-07-26 TIMEZONE #51 (§15, DEC-016, DEC-023): next-intl resolves the canonical v1 workspace fallback timezone once per server request, client components receive it as a primitive prop, and civil dates remain date-only values while instant formatting requires an explicit IANA timezone.
 - 2026-07-26 FIX-045: the day-pack board temporarily mirrors the single supported workspace timezone `Europe/Berlin` from `DEFAULT_WORKSPACE_SETTINGS.tz`; centralized request-level timezone resolution and formatting through next-intl is deferred to follow-up issue #51.
 - 2026-07-15 FIX-040 (DEC-028/029): the local-only bootstrap first validates both `SUPABASE_URL` and `DATABASE_URL` as localhost/127.0.0.1/::1, then reads the seeded active owner, replays its existing self-invite as that owner through the public kernel, ensures a confirmed local Auth user with the documented `local-dev-password`, and dispatches the unchanged internal link action.
 - 2026-07-14 FIX-035 (DEC-027): serialization/deadlock SQLSTATEs `40001` and `40P01` retry the whole kernel transaction at most three times with 5ms/10ms exponential backoff plus 0–4ms jitter; the existing one-time `23505` DEC-005 restart remains available inside each attempt.
